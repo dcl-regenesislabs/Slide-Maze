@@ -4,6 +4,7 @@
 
 import { parseLevel } from '../src/game/grid'
 import { decodeLevelCode, encodeLevelCode } from '../src/game/levelCode'
+import { fillRect, flipHorizontal, flipVertical, floodFill, rotateRight } from '../src/game/editorOps'
 import { LEVELS, levelCode } from '../src/game/levels'
 import { canReachExit, createState, isSolved, playerCanStand, push } from '../src/game/logic'
 import { solve, solveFrom } from './solver'
@@ -153,6 +154,25 @@ LEVELS.forEach((level, i) => {
   if (sol.solvable) console.log(`       ${sol.steps.map((s) => `${s.block.x},${s.block.y}${s.dir}`).join('  ')}`)
   console.log(`       ${levelCode(level)}`)
 })
+
+console.log('editor operations')
+{
+  ok(JSON.stringify(floodFill(['#####', '#...#', '#.#.#', '#...#', '#####'], 1, 1, 'O')) === JSON.stringify(['#####', '#OOO#', '#O#O#', '#OOO#', '#####']), 'flood fill replaces a connected region and stops at walls')
+  ok(JSON.stringify(fillRect(['.....', '.....', '.....'], 3, 2, 1, 0, 'W')) === JSON.stringify(['.WWW.', '.WWW.', '.WWW.']), 'rectangle fill works with corners in any order')
+  ok(JSON.stringify(rotateRight(['xy.', 'zp.'])) === JSON.stringify(['zx', 'py', '..']), 'rotate turns the grid a quarter clockwise')
+  ok(JSON.stringify(rotateRight(rotateRight(rotateRight(rotateRight(['#^>', 'vu.']))))) === JSON.stringify(['#^>', 'vu.']), 'four rotations come back to the start')
+  ok(JSON.stringify(rotateRight(['>^'])) === JSON.stringify(['v', '>']), 'rotating turns arrows with the grid')
+  // The strongest check: a mirrored or rotated level plays identically, so its minimum push count must not change.
+  // This would fail if any arrow or fan were turned the wrong way.
+  for (const [i, level] of LEVELS.entries()) {
+    const base = solve(level).pushes
+    const variants: [string, string[]][] = [['flipped left-right', flipHorizontal(level.rows)], ['flipped top-bottom', flipVertical(level.rows)], ['rotated', rotateRight(level.rows)]]
+    for (const [name, rows] of variants) {
+      const p = solve(parseLevel('v', rows)).pushes
+      ok(p === base, `level ${i + 1} ${name}: still ${base} pushes${p === base ? '' : ` (got ${p})`}`)
+    }
+  }
+}
 
 console.log('hint (solve from any position)')
 {

@@ -6,6 +6,7 @@ import { engine, InputAction, inputSystem, PointerEventType } from '@dcl/sdk/ecs
 import { copyToClipboard } from '~system/RestrictedActions'
 import { activeLevel, buildCustom, loadLevel, restartLevel, returnToLobby, setCellClickHandler, teleportToStart } from './world'
 import { Level, parseLevel } from './grid'
+import { fillRect, flipHorizontal, flipVertical, floodFill, rotateRight } from './editorOps'
 import { decodeLevelCode, encodeLevelCode } from './levelCode'
 import { solve } from './solver'
 import { editor, EditorTool, session } from './session'
@@ -113,6 +114,8 @@ export function openEditor() {
   past.length = 0 // a fresh editing session starts with no history
   future.length = 0
   editor.open = true
+  editor.mode = 'paint'
+  editor.anchor = null
   session.menuOpen = false
   session.codeOpen = false
   say('info', 'Pick a tile, then click the grid.')
@@ -160,7 +163,45 @@ export function pickTool(id: string) {
   editor.tool = next
 }
 
+const MODES: ('paint' | 'fill' | 'rect')[] = ['paint', 'fill', 'rect']
+
+export function cycleMode() {
+  editor.mode = MODES[(MODES.indexOf(editor.mode) + 1) % MODES.length]
+  editor.anchor = null
+  say('info', editor.mode === 'paint' ? 'Paint: one tile per click.' : editor.mode === 'fill' ? 'Fill: click a tile to fill the whole connected region.' : 'Rectangle: click two opposite corners.')
+}
+
+/** Apply a whole-grid operation (flip, rotate) as one undoable step. */
+function transform(fn: (rows: string[]) => string[]) {
+  snapshot()
+  editor.rows = fn(editor.rows)
+  refresh()
+}
+export const flipH = () => transform(flipHorizontal)
+export const flipV = () => transform(flipVertical)
+export const rotate = () => transform(rotateRight)
+
 export function paint(x: number, y: number) {
+  // the player start is unique, so it is always painted one tile at a time
+  if (editor.mode === 'rect' && editor.tool !== '@') {
+    if (!editor.anchor) {
+      editor.anchor = { x, y }
+      say('info', 'Click the opposite corner.')
+      return
+    }
+    snapshot()
+    editor.rows = fillRect(editor.rows, editor.anchor.x, editor.anchor.y, x, y, editor.tool)
+    editor.anchor = null
+    refresh()
+    return
+  }
+  if (editor.mode === 'fill' && editor.tool !== '@') {
+    if (editor.rows[y][x] === editor.tool) return
+    snapshot()
+    editor.rows = floodFill(editor.rows, x, y, editor.tool)
+    refresh()
+    return
+  }
   if (editor.rows[y][x] === editor.tool) return // nothing to change, nothing to undo
   snapshot()
   const rows = editor.rows.map((r) => r.split(''))

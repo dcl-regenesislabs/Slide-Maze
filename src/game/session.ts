@@ -63,6 +63,8 @@ export interface EditorState {
   open: boolean
   rows: string[] // the level being edited, as ASCII (see grid.ts for the legend)
   tool: EditorTool
+  mode: 'paint' | 'fill' | 'rect' // paint one tile, flood fill a region, or fill a rectangle between two clicks
+  anchor: { x: number; y: number } | null // first corner of a rectangle in progress
   lastArrow: EditorTool // the arrow / fan direction the palette will pick next
   lastFan: EditorTool
   sourceIndex: number // which real level to return to on Exit
@@ -77,6 +79,8 @@ export const editor: EditorState = {
   open: false,
   rows: [],
   tool: '#',
+  mode: 'paint',
+  anchor: null,
   lastArrow: '^',
   lastFan: 'u',
   sourceIndex: 0,

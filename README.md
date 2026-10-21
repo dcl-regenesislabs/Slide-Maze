@@ -69,7 +69,11 @@ Open the **Editor** button (desktop only).
 - **Play** test-plays from the start. **Reset** puts the blocks back.
 - **Copy code** copies the level code. The paste box imports one.
 - **Save to my levels** stores it on the server for your wallet (up to 20 levels).
-- Hotkeys: **E / F** change tool, **1** rotates an arrow or fan, **2** resets the blocks.
+- **Mode** button cycles Paint (one tile), Fill (flood-fill a region) and Rect (click two corners).
+- **Flip H**, **Flip V** and **Rotate** transform the whole level. Arrows and fans turn with it, and `tools/check.ts` verifies that a flipped or rotated level keeps its minimum push count.
+- **Undo / Redo** remember every change. **Hint** solves from the current position and marks the next push.
+- Hotkeys: **E / F** change tool, **1** rotates an arrow or fan, **2** resets the blocks, **3 / 4** undo / redo.
+- On big grids the panel cells get tiny, so paint those by aiming in the 3D view.
 - Grids can be 5 to 31 tiles on each side.
 
 ## Getting started
@@ -156,7 +160,7 @@ Rough order, from the current recap:
 
 1. Playtest pass in the Explorer, and fix what breaks.
 2. Leaderboards (weekly and all-time). Needs a decision on what is ranked.
-3. Editor: undo / redo, hints, fill and mirror tools.
+3. Editor: hover highlight, faster rebuilds on big grids, level thumbnails.
 4. Sound, camera work, onboarding.
 5. Swap the placeholder boxes for the real 3D models.
 6. Later: community level submissions and voting.

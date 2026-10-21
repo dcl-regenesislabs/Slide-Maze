@@ -1,6 +1,6 @@
 import ReactEcs, { Input, Label, UiEntity } from '@dcl/sdk/react-ecs'
 import { Color4 } from '@dcl/sdk/math'
-import { canRedo, canUndo, check, copyEditorCode, exitEditor, importCode, newBlank, paint, pickTool, playTest, redo, resetBlocks, resize, undo } from '../game/editor'
+import { canRedo, canUndo, check, copyEditorCode, cycleMode, exitEditor, flipH, flipV, importCode, newBlank, paint, pickTool, playTest, redo, resetBlocks, resize, rotate, undo } from '../game/editor'
 import { editor } from '../game/session'
 import { showHint } from '../game/world'
 import { openMyLevels, saveCurrentLevel } from '../game/levelStore'
@@ -90,12 +90,12 @@ export const EditorPanel = () => {
   const rows = editor.rows.length
   const cols = editor.rows[0].length
   // keep the whole grid on screen: the virtual canvas is 1080 tall on desktop
-  const cell = Math.min(S(40), Math.floor((1080 - S(720)) / rows))
+  const cell = Math.min(S(40), Math.floor((1080 - S(770)) / rows))
   const gridW = cols * (cell + 2)
   const gridH = rows * (cell + 2)
   const width = Math.max(S(390), gridW + S(40))
   const statusColor = editor.statusKind === 'ok' ? PAL.good : editor.statusKind === 'bad' ? hex('#ff8a7a') : PAL.dim
-  const height = S(606) + gridH
+  const height = S(650) + gridH
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(84), left: S(16) }, width, height, pointerFilter: 'none' }}>
       <Card width="100%" height="100%" pad={S(12)} block justify="flex-start">
@@ -126,6 +126,12 @@ export const EditorPanel = () => {
         <UiEntity uiTransform={{ flexDirection: 'row', justifyContent: 'center', margin: { bottom: S(6) }, pointerFilter: 'none' }}>
           <SizeRow label="W" value={cols} idBase="w" onMinus={() => resize(-1, 0)} onPlus={() => resize(1, 0)} />
           <SizeRow label="H" value={rows} idBase="h" onMinus={() => resize(0, -1)} onPlus={() => resize(0, 1)} />
+        </UiEntity>
+        <UiEntity uiTransform={{ flexDirection: 'row', margin: { bottom: S(6) }, pointerFilter: 'none' }}>
+          <PillButton id="ed-mode" label={editor.mode === 'paint' ? 'Mode: Paint' : editor.mode === 'fill' ? 'Mode: Fill' : editor.anchor ? 'Rect: 2nd corner' : 'Mode: Rect'} width={S(140)} height={S(34)} accent={editor.mode !== 'paint'} onClick={cycleMode} margin={{ right: S(6) }} />
+          <PillButton id="ed-fliph" label="Flip H" width={S(76)} height={S(34)} onClick={flipH} margin={{ right: S(6) }} />
+          <PillButton id="ed-flipv" label="Flip V" width={S(76)} height={S(34)} onClick={flipV} margin={{ right: S(6) }} />
+          <PillButton id="ed-rot" label="Rotate" width={S(80)} height={S(34)} onClick={rotate} />
         </UiEntity>
         <UiEntity uiTransform={{ flexDirection: 'row', margin: { bottom: S(6) }, pointerFilter: 'none' }}>
           <PillButton id="ed-undo" label={canUndo() ? 'Undo' : 'Undo -'} width={S(100)} height={S(34)} onClick={undo} margin={{ right: S(6) }} />
