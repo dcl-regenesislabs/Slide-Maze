@@ -4,7 +4,7 @@
 
 import { engine, InputAction, inputSystem, PointerEventType } from '@dcl/sdk/ecs'
 import { copyToClipboard } from '~system/RestrictedActions'
-import { activeLevel, buildCustom, loadLevel, restartLevel, returnToLobby, setCellClickHandler, teleportToStart } from './world'
+import { activeLevel, buildCustom, hideCursor, loadLevel, restartLevel, returnToLobby, setCellClickHandler, setCellHoverHandler, teleportToStart, updateCursor } from './world'
 import { Level, parseLevel } from './grid'
 import { fillRect, flipHorizontal, flipVertical, floodFill, rotateRight } from './editorOps'
 import { decodeLevelCode, encodeLevelCode } from './levelCode'
@@ -71,6 +71,13 @@ function refresh() {
   }
   buildCustom(res.level)
   if (editor.statusKind === 'bad') say('info', '')
+  refreshCursor()
+}
+
+/** Re-draw the highlight and preview for the cell under the cursor and the selected item. */
+function refreshCursor() {
+  if (editor.open && editor.hover) updateCursor(editor.hover.x, editor.hover.y, editor.tool)
+  else hideCursor()
 }
 
 /** Put every block back where the level starts them (after test pushes) without touching the avatar. */
@@ -81,26 +88,51 @@ export function resetBlocks() {
 const PALETTE_ORDER = ['.', '#', 'W', 'O', 'F', 'E', 'P', 'S', 'B', '@', 'N', 'arrow', 'fan']
 const paletteId = (t: EditorTool) => ('^>v<'.includes(t) ? 'arrow' : 'urdl'.includes(t) ? 'fan' : t)
 
+/** Move to the next (+1) or previous (-1) item in the hotbar. */
+export function stepTool(delta: number) {
+  const i = PALETTE_ORDER.indexOf(paletteId(editor.tool))
+  pickTool(PALETTE_ORDER[(i + delta + PALETTE_ORDER.length) % PALETTE_ORDER.length])
+}
+
+/** Turn the selected arrow or fan a quarter. */
+export function rotateTool() {
+  const id = paletteId(editor.tool)
+  if (id === 'arrow' || id === 'fan') pickTool(id)
+}
+
+/** Erase the tile under the cursor (turn it back into plain ice). */
+export function eraseHovered() {
+  const h = editor.hover
+  if (!h || editor.rows[h.y][h.x] === '.') return
+  snapshot()
+  const rows = editor.rows.map((r) => r.split(''))
+  rows[h.y][h.x] = '.'
+  editor.rows = rows.map((r) => r.join(''))
+  refresh()
+}
+
+// Keys: E next item, 1 previous item, 2 turn an arrow / fan, 3 undo, 4 redo. F erases the tile you are aiming at.
 function editorInputSystem() {
   if (!editor.open) return
-  // E / F step through the tools, 1 turns the selected arrow or fan, 2 resets the blocks
-  const step = inputSystem.isTriggered(InputAction.IA_PRIMARY, PointerEventType.PET_DOWN) ? 1 : inputSystem.isTriggered(InputAction.IA_SECONDARY, PointerEventType.PET_DOWN) ? -1 : 0
-  if (step) {
-    const i = PALETTE_ORDER.indexOf(paletteId(editor.tool))
-    pickTool(PALETTE_ORDER[(i + step + PALETTE_ORDER.length) % PALETTE_ORDER.length])
-  }
-  if (inputSystem.isTriggered(InputAction.IA_ACTION_3, PointerEventType.PET_DOWN) && paletteId(editor.tool) !== editor.tool) {
-    pickTool(paletteId(editor.tool))
-  }
-  if (inputSystem.isTriggered(InputAction.IA_ACTION_4, PointerEventType.PET_DOWN)) resetBlocks()
-  if (inputSystem.isTriggered(InputAction.IA_ACTION_5, PointerEventType.PET_DOWN)) undo()
-  if (inputSystem.isTriggered(InputAction.IA_ACTION_6, PointerEventType.PET_DOWN)) redo()
+  const pressed = (a: InputAction) => inputSystem.isTriggered(a, PointerEventType.PET_DOWN)
+  if (pressed(InputAction.IA_PRIMARY)) stepTool(1)
+  if (pressed(InputAction.IA_ACTION_3)) stepTool(-1)
+  if (pressed(InputAction.IA_ACTION_4)) rotateTool()
+  if (pressed(InputAction.IA_ACTION_5)) undo()
+  if (pressed(InputAction.IA_ACTION_6)) redo()
+  if (pressed(InputAction.IA_SECONDARY)) eraseHovered()
 }
 
 export function setupEditor() {
   setCellClickHandler(paint)
+  setCellHoverHandler((x, y) => {
+    editor.hover = x < 0 ? null : { x, y }
+    refreshCursor()
+  })
   engine.addSystem(editorInputSystem, 4, 'sm-editor-input')
 }
+
+export const togglePanel = () => (editor.panelOpen = !editor.panelOpen)
 
 export function openEditor() {
   const lvl = activeLevel()
@@ -116,6 +148,8 @@ export function openEditor() {
   editor.open = true
   editor.mode = 'paint'
   editor.anchor = null
+  editor.panelOpen = false
+  editor.hover = null
   session.menuOpen = false
   session.codeOpen = false
   say('info', 'Pick a tile, then click the grid.')
@@ -126,6 +160,8 @@ export function openEditor() {
 /** Leave the editor and go back to the real level it came from. */
 export function exitEditor() {
   editor.open = false
+  editor.hover = null
+  hideCursor()
   if (editor.fromLobby) returnToLobby()
   else loadLevel(editor.sourceIndex)
 }
@@ -138,6 +174,8 @@ export function playTest() {
     return
   }
   editor.open = false
+  editor.hover = null
+  hideCursor()
   buildCustom(res.level)
   restartLevel()
 }
@@ -154,6 +192,7 @@ export function pickTool(id: string) {
   const family = id === 'arrow' ? ARROWS : id === 'fan' ? FANS : null
   if (!family) {
     editor.tool = id as EditorTool
+    refreshCursor()
     return
   }
   const i = family.indexOf(editor.tool)
@@ -161,6 +200,7 @@ export function pickTool(id: string) {
   if (id === 'arrow') editor.lastArrow = next
   else editor.lastFan = next
   editor.tool = next
+  refreshCursor()
 }
 
 const MODES: ('paint' | 'fill' | 'rect')[] = ['paint', 'fill', 'rect']

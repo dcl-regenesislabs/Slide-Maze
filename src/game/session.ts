@@ -71,6 +71,8 @@ export interface EditorState {
   tool: EditorTool
   mode: 'paint' | 'fill' | 'rect' // paint one tile, flood fill a region, or fill a rectangle between two clicks
   anchor: { x: number; y: number } | null // first corner of a rectangle in progress
+  panelOpen: boolean // the big "Level tools" panel (the hotbar and toolbar are always shown while editing)
+  hover: { x: number; y: number } | null // the cell under the cursor in the 3D view
   lastArrow: EditorTool // the arrow / fan direction the palette will pick next
   lastFan: EditorTool
   sourceIndex: number // which real level to return to on Exit
@@ -87,6 +89,8 @@ export const editor: EditorState = {
   tool: '#',
   mode: 'paint',
   anchor: null,
+  panelOpen: false,
+  hover: null,
   lastArrow: '^',
   lastFan: 'u',
   sourceIndex: 0,

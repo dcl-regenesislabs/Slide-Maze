@@ -4,7 +4,7 @@ import { LEVELS } from '../game/levels'
 import { openEditor } from '../game/editor'
 import { closeMyLevels, deleteMyLevel, loadMyLevel, myLevels, openMyLevels } from '../game/levelStore'
 import { EDITOR_ENABLED, editor, elapsedMs, isUnlocked, progress, session } from '../game/session'
-import { EditorPanel, editorAvailable } from './editorPanel'
+import { EditorUI, editorAvailable } from './editorPanel'
 import { Color4 } from '@dcl/sdk/math'
 import { Card, FS, OutlineLabel, PAL, PillButton, S, hover, isHovered, popFactor, popPress } from './theme'
 
@@ -362,11 +362,11 @@ export const Hud = () => {
       {!session.inLobby && <TopBar />}
       {session.unlocked && session.hasDoor && !session.solved && !editor.open && <ExitBanner />}
       {Date.now() < session.toastUntil && !session.inLobby && !editor.open && <ToastBanner />}
-      <SideButtons />
+      {!editor.open && <SideButtons />}
       {session.codeOpen && <CodePanel />}
       {session.menuOpen && <LevelMenu />}
       {Date.now() < session.hintUntil && !session.inLobby && <HintBanner />}
-      {editor.open && <EditorPanel />}
+      {editor.open && <EditorUI />}
       {myLevels.panelOpen && <MyLevelsPanel />}
       {showComplete && !session.advancing && !editor.open && !session.codeOpen && !session.menuOpen && <CompletePanel />}
     </UiEntity>

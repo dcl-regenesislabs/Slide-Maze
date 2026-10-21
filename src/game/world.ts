@@ -1,7 +1,7 @@
 // The 3D side of the game (greybox look): spawns a level from data, detects the avatar pushing a block,
 // animates the slide, and tells the session when the level is solved. All the rules live in logic.ts.
 
-import { ColliderLayer, engine, Entity, InputAction, Material, MeshCollider, MeshRenderer, pointerEventsSystem, Transform } from '@dcl/sdk/ecs'
+import { ColliderLayer, engine, Entity, InputAction, Material, MaterialTransparencyMode, MeshCollider, MeshRenderer, pointerEventsSystem, Transform } from '@dcl/sdk/ecs'
 import { Color3, Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { copyToClipboard, movePlayerTo } from '~system/RestrictedActions'
 import { FX_COLORS, clearFx, confetti, dust, holeBurst, plateOn, setupFx, stopBurst, trail, windStreak } from './fx'
@@ -185,6 +185,8 @@ function clearLevel() {
   if (!rt) return
   for (const e of rt.picks) {
     pointerEventsSystem.removeOnPointerDown(e)
+    pointerEventsSystem.removeOnPointerHoverEnter(e)
+    pointerEventsSystem.removeOnPointerHoverLeave(e)
     engine.removeEntity(e)
   }
   for (const e of rt.entities) engine.removeEntity(e)
@@ -320,7 +322,10 @@ function buildLevel(level: Level, index: number) {
 
   buildUnderside(r)
   buildEntrance(r)
-  if (editor.open) buildPicks(r)
+  if (editor.open) {
+    buildGrid(r)
+    buildPicks(r)
+  }
 
   session.inLobby = false
   session.unlocked = false
@@ -375,6 +380,82 @@ function buildUnderside(r: Runtime) {
 let cellClick: ((x: number, y: number) => void) | null = null
 export const setCellClickHandler = (fn: (x: number, y: number) => void) => (cellClick = fn)
 
+/** Called with the cell under the cursor while editing, or (-1, -1) when it leaves every cell. */
+let cellHover: ((x: number, y: number) => void) | null = null
+export const setCellHoverHandler = (fn: (x: number, y: number) => void) => (cellHover = fn)
+
+// ---- Editor cursor: a highlight on the tile you are aiming at and a see-through preview of the selected item ----
+let cursorEnts: Entity[] = []
+
+export function hideCursor() {
+  for (const e of cursorEnts) engine.removeEntity(e)
+  cursorEnts = []
+}
+
+// what the preview looks like per tile character: [height above the ice, colour]
+const GHOST: Record<string, [number, Color4]> = {
+  '.': [0.12, ICE_A],
+  '#': [STEP_HEIGHT, STEP],
+  W: [WALL_HEIGHT - FLOOR_THICK, WALL],
+  O: [0.08, PIT],
+  F: [0.14, PIT_LIP],
+  E: [3.8, DOOR_RUNE],
+  P: [0.1, PLATE_OFF],
+  S: [BLOCK_SIZE, STATIC],
+  B: [BLOCK_SIZE, MOVABLE],
+  '@': [0.1, PLATE_ON],
+  N: [0.22, SNOW],
+  '^': [0.1, ARROW],
+  '>': [0.1, ARROW],
+  v: [0.1, ARROW],
+  '<': [0.1, ARROW],
+  u: [1.6, FAN_BODY],
+  r: [1.6, FAN_BODY],
+  d: [1.6, FAN_BODY],
+  l: [1.6, FAN_BODY]
+}
+
+/** Move the cursor to cell (x, y) showing `tool`. Pass x < 0 to hide it. */
+export function updateCursor(x: number, y: number, tool: string) {
+  hideCursor()
+  if (!rt || !editor.open || x < 0 || y < 0 || x >= rt.level.width || y >= rt.level.height) return
+  const [h, color] = GHOST[tool] ?? [0.1, ICE_A]
+  const c = tileCentre({ x, y }, rt.level, 0)
+  const make = (pos: Vector3, size: Vector3, col: Color4, alpha: number, glow: number) => {
+    const e = engine.addEntity()
+    Transform.create(e, { position: pos, scale: size })
+    MeshRenderer.setBox(e)
+    Material.setPbrMaterial(e, {
+      albedoColor: Color4.create(col.r, col.g, col.b, alpha),
+      emissiveColor: Color3.create(col.r, col.g, col.b),
+      emissiveIntensity: glow,
+      roughness: 0.5,
+      transparencyMode: MaterialTransparencyMode.MTM_ALPHA_BLEND
+    })
+    cursorEnts.push(e)
+  }
+  // a bright frame-like slab on the tile top, then the preview of the item standing on it
+  const top = tool === '#' || tool === 'W' ? ELEV + FLOOR_THICK : FLOOR_TOP
+  make(Vector3.create(c.x, FLOOR_TOP + 0.32, c.z), Vector3.create(TILE + 0.06, 0.06, TILE + 0.06), DOOR_RUNE, 0.55, 2.2)
+  make(Vector3.create(c.x, top + h / 2, c.z), Vector3.create(TILE * 0.96, h, TILE * 0.96), color, 0.5, 0.6)
+}
+
+const GRID_LINE = Color4.create(0.3, 0.75, 1, 1)
+
+/** Thin lines along every tile edge, so the grid you are building on is visible in the world (editor only). */
+function buildGrid(r: Runtime) {
+  const l = r.level
+  const y = FLOOR_TOP + STEP_HEIGHT + 0.03
+  const x0 = ORIGIN.x - (l.width * TILE) / 2
+  const z0 = ORIGIN.z - (l.height * TILE) / 2
+  for (let i = 0; i <= l.width; i++) {
+    box(r, Vector3.create(x0 + i * TILE, y, ORIGIN.z), Vector3.create(0.07, 0.03, l.height * TILE), GRID_LINE, false, { glow: 0.9, roughness: 0.5 })
+  }
+  for (let j = 0; j <= l.height; j++) {
+    box(r, Vector3.create(ORIGIN.x, y, z0 + j * TILE), Vector3.create(l.width * TILE, 0.03, 0.07), GRID_LINE, false, { glow: 0.9, roughness: 0.5 })
+  }
+}
+
 /** One invisible, pointer-only collider per cell, as tall as what is drawn there, so a click lands on the right tile. */
 function buildPicks(r: Runtime) {
   const level = r.level
@@ -391,7 +472,9 @@ function buildPicks(r: Runtime) {
       const e = engine.addEntity()
       Transform.create(e, { position: Vector3.create(tileX(x, level), ELEV + h / 2, tileZ(y, level)), scale: Vector3.create(TILE, h, TILE) })
       MeshCollider.setBox(e, ColliderLayer.CL_POINTER)
-      pointerEventsSystem.onPointerDown({ entity: e, opts: { button: InputAction.IA_POINTER, hoverText: `Paint (${x}, ${y})`, maxDistance: 100 } }, () => cellClick?.(x, y))
+      pointerEventsSystem.onPointerDown({ entity: e, opts: { button: InputAction.IA_POINTER, hoverText: `Place   (F: erase,  E: next item)  [${x}, ${y}]`, maxDistance: 120 } }, () => cellClick?.(x, y))
+      pointerEventsSystem.onPointerHoverEnter({ entity: e, opts: { maxDistance: 120 } }, () => cellHover?.(x, y))
+      pointerEventsSystem.onPointerHoverLeave({ entity: e, opts: { maxDistance: 120 } }, () => cellHover?.(-1, -1))
       r.picks.push(e)
     }
   }

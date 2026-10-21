@@ -1,6 +1,6 @@
 import ReactEcs, { Input, Label, UiEntity } from '@dcl/sdk/react-ecs'
 import { Color4 } from '@dcl/sdk/math'
-import { canRedo, canUndo, check, copyEditorCode, cycleMode, exitEditor, flipH, flipV, importCode, newBlank, paint, pickTool, playTest, redo, resetBlocks, resize, rotate, undo } from '../game/editor'
+import { canRedo, canUndo, check, copyEditorCode, cycleMode, exitEditor, flipH, flipV, importCode, newBlank, paint, pickTool, playTest, redo, resetBlocks, resize, rotate, togglePanel, undo } from '../game/editor'
 import { editor } from '../game/session'
 import { showHint } from '../game/world'
 import { openMyLevels, saveCurrentLevel } from '../game/levelStore'
@@ -34,28 +34,73 @@ const FAN_GLYPH: Record<string, string> = { u: 'F^', r: 'F>', d: 'Fv', l: 'F<' }
 const cellGlyph = (ch: string) => (ch === 'N' ? '*' : ch === 'F' ? 'o' : (FAN_GLYPH[ch] ?? ch))
 const isOn = (tool: string) => (tool === 'arrow' ? ARROW_CHARS.includes(editor.tool) : tool === 'fan' ? FAN_CHARS.includes(editor.tool) : editor.tool === tool)
 
-const ToolButton = (props: { t: (typeof TOOLS)[number]; key?: string }) => {
+/** One slot of the hotbar along the bottom of the screen. Selected = amber rim. */
+const HotbarSlot = (props: { t: (typeof TOOLS)[number]; n: number; key?: string }) => {
   const { tool, name, color } = props.t
   const on = isOn(tool)
   const id = `tool${tool}`
+  const glyph = tool === 'arrow' ? (ARROW_CHARS.includes(editor.tool) ? editor.tool : editor.lastArrow) : tool === 'fan' ? FAN_GLYPH[FAN_CHARS.includes(editor.tool) ? editor.tool : editor.lastFan] : ''
   return (
     <UiEntity
-      uiTransform={{ width: S(60), height: S(46), margin: S(2), padding: Math.max(2, S(3)), borderRadius: S(10), pointerFilter: 'block' }}
+      uiTransform={{ width: S(70), height: S(82), margin: S(3), padding: Math.max(2, S(3)), borderRadius: S(12), pointerFilter: 'block' }}
       uiBackground={{ color: on ? PAL.amber : isHovered(id) ? PAL.rim : PAL.rimDim }}
       onMouseDown={() => pickTool(tool)}
       {...hover(id)}
     >
       <UiEntity
-        uiTransform={{ width: '100%', height: '100%', borderRadius: S(8), flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerFilter: 'none' }}
-        uiBackground={{ color: PAL.panelHi }}
+        uiTransform={{ width: '100%', height: '100%', borderRadius: S(9), flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerFilter: 'none' }}
+        uiBackground={{ color: on ? PAL.panelHi : PAL.panel }}
       >
-        <UiEntity uiTransform={{ width: S(30), height: S(18), borderRadius: S(4), justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }} uiBackground={{ color }}>
-          {(tool === 'arrow' || tool === 'fan') && (
-            <Label value={tool === 'arrow' ? (ARROW_CHARS.includes(editor.tool) ? editor.tool : editor.lastArrow) : FAN_GLYPH[FAN_CHARS.includes(editor.tool) ? editor.tool : editor.lastFan]} fontSize={FS(12)} font="sans-serif" color={hex('#0b1830')} textAlign="middle-center" uiTransform={{ width: '100%', height: '100%' }} />
-          )}
+        <UiEntity uiTransform={{ width: S(40), height: S(36), borderRadius: S(7), margin: { bottom: S(4) }, justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }} uiBackground={{ color }}>
+          {glyph !== '' && <Label value={glyph} fontSize={FS(16)} font="sans-serif" color={hex('#0b1830')} textAlign="middle-center" uiTransform={{ width: '100%', height: '100%' }} />}
         </UiEntity>
-        <Label value={name} fontSize={FS(12)} font="sans-serif" color={on ? PAL.amber : PAL.text} textAlign="middle-center" uiTransform={{ width: '100%', height: S(18) }} />
+        <Label value={name} fontSize={FS(13)} font="sans-serif" color={on ? PAL.amber : PAL.text} textAlign="middle-center" uiTransform={{ width: '100%', height: S(20) }} />
       </UiEntity>
+    </UiEntity>
+  )
+}
+
+/** The hotbar: every item you can place, along the bottom of the screen, like a build-mode toolbar. */
+const Hotbar = () => (
+  <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(14), left: 0 }, width: '100%', flexDirection: 'column', alignItems: 'center', pointerFilter: 'none' }}>
+    <Label
+      value="Click: place    F: erase    E / 1: next / previous item    2: turn arrow or fan    3 / 4: undo / redo"
+      fontSize={FS(14)}
+      font="sans-serif"
+      color={PAL.dim}
+      textAlign="middle-center"
+      uiTransform={{ width: S(900), height: S(24), margin: { bottom: S(2) } }}
+    />
+    <UiEntity uiTransform={{ flexDirection: 'row', justifyContent: 'center', pointerFilter: 'none' }}>
+      {TOOLS.map((t, n) => (
+        <HotbarSlot key={`h${t.tool}`} t={t} n={n} />
+      ))}
+    </UiEntity>
+  </UiEntity>
+)
+
+/** Slim toolbar at the top left: the actions you use all the time while building. */
+const Toolbar = () => {
+  const statusColor = editor.statusKind === 'ok' ? PAL.good : editor.statusKind === 'bad' ? hex('#ff8a7a') : PAL.dim
+  const b = (id: string, label: string, onClick: () => void, accent = false, w = 74) => (
+    <PillButton id={id} label={label} width={S(w)} height={S(38)} accent={accent} onClick={onClick} margin={{ right: S(4), bottom: S(4) }} />
+  )
+  return (
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(16), left: S(16) }, width: S(440), flexDirection: 'column', pointerFilter: 'none' }}>
+      <Card width="100%" height={S(148)} pad={S(8)} block justify="flex-start" align="flex-start">
+        <UiEntity uiTransform={{ flexDirection: 'row', flexWrap: 'wrap', width: '100%', pointerFilter: 'none' }}>
+          {b('ed-undo', canUndo() ? 'Undo' : 'Undo -', undo)}
+          {b('ed-redo', canRedo() ? 'Redo' : 'Redo -', redo)}
+          {b('ed-mode', editor.mode === 'paint' ? 'Paint' : editor.mode === 'fill' ? 'Fill' : editor.anchor ? '2nd corner' : 'Rect', cycleMode, editor.mode !== 'paint', editor.anchor ? 104 : 74)}
+          {b('ed-hint', 'Hint', showHint)}
+          {b('ed-check', 'Check', check, true)}
+          {b('ed-play', 'Play', playTest, true)}
+          {b('ed-reset', 'Reset', resetBlocks)}
+          {b('ed-tools', editor.panelOpen ? 'Tools <' : 'Tools >', togglePanel)}
+          {b('ed-exit', 'Exit', exitEditor)}
+        </UiEntity>
+        <Label value={editor.status} fontSize={FS(14)} font="sans-serif" color={statusColor} textAlign="middle-left" textWrap="wrap" uiTransform={{ width: '100%', height: S(46) }} />
+      </Card>
     </UiEntity>
   )
 }
@@ -86,35 +131,20 @@ const SizeRow = (props: { label: string; value: number; onMinus: () => void; onP
   </UiEntity>
 )
 
-export const EditorPanel = () => {
+/** Everything you need less often: the grid as a map, resizing, flip and rotate, saving, importing and exporting. */
+const ToolsPanel = () => {
   const rows = editor.rows.length
   const cols = editor.rows[0].length
-  // keep the whole grid on screen: the virtual canvas is 1080 tall on desktop
-  const cell = Math.min(S(40), Math.floor((1080 - S(770)) / rows))
+  const cell = Math.min(S(40), Math.floor((1080 - S(560)) / rows))
   const gridW = cols * (cell + 2)
   const gridH = rows * (cell + 2)
   const width = Math.max(S(390), gridW + S(40))
-  const statusColor = editor.statusKind === 'ok' ? PAL.good : editor.statusKind === 'bad' ? hex('#ff8a7a') : PAL.dim
-  const height = S(650) + gridH
+  const height = S(360) + gridH
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(84), left: S(16) }, width, height, pointerFilter: 'none' }}>
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(176), left: S(16) }, width, height, pointerFilter: 'none' }}>
       <Card width="100%" height="100%" pad={S(12)} block justify="flex-start">
-        <OutlineLabel value="LEVEL EDITOR" fontSize={FS(24)} color={PAL.amber} width="100%" height={S(32)} />
-        <Label
-          value="Click the grid, or aim at a tile in the world and click. E / F: tool. 1: rotate. 2: reset blocks. 3 / 4: undo / redo."
-          fontSize={FS(12)}
-          font="sans-serif"
-          color={PAL.dim}
-          textAlign="middle-center"
-          textWrap="wrap"
-          uiTransform={{ width: '100%', height: S(34) }}
-        />
-        <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', pointerFilter: 'none' }}>
-          {TOOLS.map((t) => (
-            <ToolButton key={`b${t.tool}`} t={t} />
-          ))}
-        </UiEntity>
-        <UiEntity uiTransform={{ width: gridW, height: gridH, margin: { top: S(6), bottom: S(6) }, flexDirection: 'column', pointerFilter: 'none' }}>
+        <OutlineLabel value="LEVEL TOOLS" fontSize={FS(22)} color={PAL.amber} width="100%" height={S(30)} />
+        <UiEntity uiTransform={{ width: gridW, height: gridH, margin: { top: S(4), bottom: S(6) }, flexDirection: 'column', pointerFilter: 'none' }}>
           {editor.rows.map((row, y) => (
             <UiEntity key={`r${y}`} uiTransform={{ flexDirection: 'row', width: gridW, height: cell + 2, pointerFilter: 'none' }}>
               {row.split('').map((_, x) => (
@@ -128,20 +158,10 @@ export const EditorPanel = () => {
           <SizeRow label="H" value={rows} idBase="h" onMinus={() => resize(0, -1)} onPlus={() => resize(0, 1)} />
         </UiEntity>
         <UiEntity uiTransform={{ flexDirection: 'row', margin: { bottom: S(6) }, pointerFilter: 'none' }}>
-          <PillButton id="ed-mode" label={editor.mode === 'paint' ? 'Mode: Paint' : editor.mode === 'fill' ? 'Mode: Fill' : editor.anchor ? 'Rect: 2nd corner' : 'Mode: Rect'} width={S(140)} height={S(34)} accent={editor.mode !== 'paint'} onClick={cycleMode} margin={{ right: S(6) }} />
-          <PillButton id="ed-fliph" label="Flip H" width={S(76)} height={S(34)} onClick={flipH} margin={{ right: S(6) }} />
-          <PillButton id="ed-flipv" label="Flip V" width={S(76)} height={S(34)} onClick={flipV} margin={{ right: S(6) }} />
-          <PillButton id="ed-rot" label="Rotate" width={S(80)} height={S(34)} onClick={rotate} />
-        </UiEntity>
-        <UiEntity uiTransform={{ flexDirection: 'row', margin: { bottom: S(6) }, pointerFilter: 'none' }}>
-          <PillButton id="ed-undo" label={canUndo() ? 'Undo' : 'Undo -'} width={S(100)} height={S(34)} onClick={undo} margin={{ right: S(6) }} />
-          <PillButton id="ed-redo" label={canRedo() ? 'Redo' : 'Redo -'} width={S(100)} height={S(34)} onClick={redo} margin={{ right: S(6) }} />
-          <PillButton id="ed-hint" label="Hint" width={S(100)} height={S(34)} onClick={showHint} />
-        </UiEntity>
-        <UiEntity uiTransform={{ flexDirection: 'row', margin: { bottom: S(6) }, pointerFilter: 'none' }}>
-          <PillButton id="ed-check" label="Check" width={S(100)} height={S(40)} accent onClick={check} margin={{ right: S(6) }} />
-          <PillButton id="ed-play" label="Play" width={S(100)} height={S(40)} accent onClick={playTest} margin={{ right: S(6) }} />
-          <PillButton id="ed-copy" label="Copy code" width={S(130)} height={S(40)} onClick={copyEditorCode} />
+          <PillButton id="ed-fliph" label="Flip H" width={S(86)} height={S(34)} onClick={flipH} margin={{ right: S(6) }} />
+          <PillButton id="ed-flipv" label="Flip V" width={S(86)} height={S(34)} onClick={flipV} margin={{ right: S(6) }} />
+          <PillButton id="ed-rot" label="Rotate" width={S(90)} height={S(34)} onClick={rotate} margin={{ right: S(6) }} />
+          <PillButton id="ed-new" label="New" width={S(70)} height={S(34)} onClick={() => newBlank(7, 7)} />
         </UiEntity>
         <Input
           placeholder="Level name (to save)"
@@ -171,24 +191,20 @@ export const EditorPanel = () => {
           uiTransform={{ width: '100%', height: S(34), margin: { bottom: S(6) } }}
           uiBackground={{ color: PAL.outline }}
         />
-        <Label
-          value={editor.status}
-          fontSize={FS(15)}
-          font="sans-serif"
-          color={statusColor}
-          textAlign="middle-center"
-          textWrap="wrap"
-          uiTransform={{ width: '100%', height: S(44) }}
-        />
-        <UiEntity uiTransform={{ flexDirection: 'row', margin: { top: S(4) }, pointerFilter: 'none' }}>
-          <PillButton id="ed-reset" label="Reset" width={S(96)} height={S(38)} onClick={resetBlocks} margin={{ right: S(6) }} />
-          <PillButton id="ed-new" label="New" width={S(86)} height={S(38)} onClick={() => newBlank(7, 7)} margin={{ right: S(6) }} />
-          <PillButton id="ed-exit" label="Exit" width={S(86)} height={S(38)} onClick={exitEditor} />
-        </UiEntity>
+        <PillButton id="ed-copy" label="Copy level code" width={S(180)} height={S(38)} onClick={copyEditorCode} />
       </Card>
     </UiEntity>
   )
 }
+
+/** The whole editor interface: toolbar (top left), hotbar (bottom), and the optional Level tools panel. */
+export const EditorUI = () => (
+  <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
+    <Toolbar />
+    <Hotbar />
+    {editor.panelOpen && <ToolsPanel />}
+  </UiEntity>
+)
 
 /** The editor needs a mouse and a big screen; it is not offered on phones. */
 export const editorAvailable = () => !mobile()

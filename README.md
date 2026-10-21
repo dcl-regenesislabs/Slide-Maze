@@ -12,7 +12,8 @@ The whole floor is ice. Walk into a block and it **slides** across the level unt
 - **Cover every plate at once** to unlock the exit door, then walk through it. Blocks do not stop on a plate by themselves, so the puzzle is working out what will stop them there. The covering blocks are frozen once the door opens, and the solver also checks that you can reach the door.
 - **Levels float 12 m above the ground.** Falling into a hole, or off the edge, resets the level.
 - **Step ledges** (`#`) around the room are low enough to jump onto. You can walk along them and push blocks from that side. Blocks still stop against them.
-- You start in a **lobby**. A terminal opens the level-select menu.
+- You start in a **lobby** inside a greybox **cave**. A terminal opens the level-select menu.
+- Every level has an **entrance arch** where you arrive and an **exit door**. Walking through the open exit takes you on to the next level.
 - **Progress is saved per wallet** on the server: completed levels and your best moves and time. The server checks reported results (a real level, at least the optimal number of pushes, not faster than a push physically takes).
 - The **Hint** button solves the level from where it stands and marks the next push.
 
@@ -60,21 +61,14 @@ Format: `SM1` (version) - `WxH` (size) - rows separated by `/` (`.4` means four 
 
 ## Level editor (in game)
 
-Open the **Editor** button (desktop only).
+Press the **Editor** button (desktop only). You build in the 3D world itself, a bit like a build mode:
 
-- A panel on the left has the tile palette and a clickable grid. Click a cell to paint it.
-- You can also **aim at a tile in the 3D view and click** to paint it.
-- Your edits rebuild the real level live, so you can walk around and push blocks in it while editing.
-- **Check** runs the real solver and reports whether the level is solvable and the fewest pushes.
-- **Play** test-plays from the start. **Reset** puts the blocks back.
-- **Copy code** copies the level code. The paste box imports one.
-- **Save to my levels** stores it on the server for your wallet (up to 20 levels).
-- **Mode** button cycles Paint (one tile), Fill (flood-fill a region) and Rect (click two corners).
-- **Flip H**, **Flip V** and **Rotate** transform the whole level. Arrows and fans turn with it, and `tools/check.ts` verifies that a flipped or rotated level keeps its minimum push count.
-- **Undo / Redo** remember every change. **Hint** solves from the current position and marks the next push.
-- Hotkeys: **E / F** change tool, **1** rotates an arrow or fan, **2** resets the blocks, **3 / 4** undo / redo.
-- On big grids the panel cells get tiny, so paint those by aiming in the 3D view.
-- Grids can be 5 to 31 tiles on each side.
+- **Hotbar along the bottom** with every item (ice, step, wall, hole, pit, exit, plate, cube, block, start, snow, arrow, fan). Click a slot, or press **E** (next item) and **1** (previous item).
+- **Aim at a tile and click to place.** A highlight and a see-through preview of the selected item show exactly where it will go. The tile grid is drawn on the floor.
+- **F erases** the tile you are aiming at. **2** turns an arrow or fan. **3 / 4** undo and redo.
+- **Toolbar (top left):** Undo, Redo, a Mode button (Paint, Fill, or Rect for two-corner rectangles), **Hint**, **Check**, **Play**, Reset blocks, Tools and Exit.
+- **Check** runs the real solver and reports whether the level is solvable and the fewest pushes. **Play** test-plays from the start. You can also just walk around and push blocks in the level while you edit.
+- **Tools panel:** the grid as a map you can click, resize (5 to 31 tiles per side), Flip H / Flip V / Rotate (arrows and fans turn with it, and `tools/check.ts` verifies a flipped or rotated level keeps its push count), New, **Save to my levels** (stored on the server for your wallet, up to 20), My levels, level code import and **Copy level code**.
 
 ## Getting started
 
