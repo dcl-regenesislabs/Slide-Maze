@@ -246,13 +246,9 @@ function buildLevel(level: Level, index: number) {
           const blade = box(r, hub, Vector3.create(TILE * 0.7, 0.2, 0.06), FAN_BLADE, false, { glow: 0.8, roughness: 0.3 })
           fanBlades.push({ entity: blade, yaw, phase: b * 90 })
         }
-        // wind lane length (tiles until something solid), for the streaks
+        // wind lane length for the streaks: the tiles the rules treat as windy (so they always agree)
         let len = 0
-        for (let q = { x: x + d.x, y: y + d.y }; q.x >= 0 && q.y >= 0 && q.x < level.width && q.y < level.height; q = { x: q.x + d.x, y: q.y + d.y }) {
-          const lt = level.tiles[q.y][q.x]
-          if (lt === '#' || lt === 'W' || lt === 'S' || FAN_DIR[lt]) break
-          len++
-        }
+        for (let q = { x: x + d.x, y: y + d.y }; q.x >= 0 && q.y >= 0 && q.x < level.width && q.y < level.height && level.wind[q.y][q.x] === FAN_DIR[t]; q = { x: q.x + d.x, y: q.y + d.y }) len++
         r.fans.push({ x: c.x, z: c.z, fx, fz, len })
       } else if (t === 'O') {
         // no floor at all: the level floats, so a block or the avatar that goes in really drops to the ground below

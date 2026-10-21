@@ -124,12 +124,12 @@ export const LEVELS: Level[] = [
     '#######'
   ]),
   parseLevel('Tailwind', [
-    '####E##',
-    '#....P#',
-    '#.SOd.#',
-    '#P....#',
-    '#BS...#',
-    '#.@B..#',
+    '##E####',
+    '#B....#',
+    '#.S.d.#',
+    '#...@B#',
+    '#...P.#',
+    '#OP.S.#',
     '#######'
   ]),
   // Levels 14-15 introduce the fillable pit (F): the first block that slides in is used up and the pit becomes floor.

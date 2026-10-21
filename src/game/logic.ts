@@ -3,7 +3,7 @@
 // A push slides a block one tile at a time until the next tile is blocked (step, wall, static cube, fan, another
 // block, the map edge). Tiles change that slide: a hole drops the block (level lost), a snow patch stops it, an arrow
 // turns it. Plates do not stop a block: a plate is only covered if something else stops the block on it.
-// When a block comes to rest in a fan's wind lane, the fan pushes it on (and so on, a few times at most).
+// A fan's wind lane acts like an arrow on every tile of the lane: a block that enters it is pushed along the wind.
 // A fillable pit (F) swallows the first block that slides into it and becomes floor; a hole (O) just loses the block.
 
 import { ARROW_DIR, DIRS, DIR_DELTA, Dir, FAN_DIR, Level, Pt, Tile } from './grid'
@@ -24,7 +24,6 @@ export interface PushResult {
 }
 
 const MAX_STEPS = 400 // stops an arrow loop from sliding a block forever
-const MAX_LAUNCHES = 12 // stops fans from passing a block back and forth forever
 
 export function createState(level: Level): GameState {
   return { level, blocks: level.blocks.map((b) => ({ ...b })), filled: [], moves: 0 }
@@ -54,20 +53,6 @@ export function playerCanStand(state: GameState, p: Pt): boolean {
   if (t === 'W' || t === 'S' || t === 'O' || FAN_DIR[t] !== undefined) return false
   if (isOpenPit(state, p)) return false
   return blockAt(state, p) === -1
-}
-
-/** Which way the wind pushes a block resting at `at`, or null. The nearest block in a fan's lane is the one it hits. */
-function windAt(level: Level, others: Pt[], at: Pt): Dir | null {
-  for (const fan of level.fans) {
-    const d = DIR_DELTA[fan.dir]
-    let q = { x: fan.x + d.x, y: fan.y + d.y }
-    while (inBounds(level, q) && !solidForBlocks(level.tiles[q.y][q.x])) {
-      if (samePt(q, at)) return fan.dir
-      if (others.some((b) => samePt(b, q))) break // another block shields the rest of the lane
-      q = { x: q.x + d.x, y: q.y + d.y }
-    }
-  }
-  return null
 }
 
 export function push(state: GameState, index: number, dir: Dir): PushResult {
@@ -103,14 +88,12 @@ export function push(state: GameState, index: number, dir: Dir): PushResult {
       }
       if (t === 'N') return true
       if (ARROW_DIR[t]) d = ARROW_DIR[t]
+      const w = level.wind[next.y][next.x]
+      if (w) d = w // in a fan's wind lane: pushed along the wind
     }
   }
 
   if (!slide(dir)) return { moved: false, path, fell: false, consumed: false, state }
-  for (let n = 0; n < MAX_LAUNCHES && !fell && !consumed; n++) {
-    const wind = windAt(level, others, cur)
-    if (!wind || !slide(wind)) break
-  }
   if (fell) return { moved: true, path, fell, consumed: false, state }
   if (consumed) {
     // the block is used up and the pit becomes floor

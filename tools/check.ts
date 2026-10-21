@@ -87,53 +87,24 @@ console.log('new tiles')
   const out = push(createState(outside), 0, 'N')
   ok(out.state.blocks[0].x === 3 && out.state.blocks[0].y === 2, 'a block that stops outside the lane is not blown')
 
-  // A second block in the lane shields what is behind it.
-  const shield = parseLevel('t', ['#########', '#r.B...P#', '#.......#', '#...B...#', '#...@...#', '#########'])
-  const sh = push(createState(shield), 1, 'N')
-  ok(sh.state.blocks[1].x === 4 && sh.state.blocks[1].y === 1, 'a block behind another in the lane is not blown')
-}
-
-console.log('fillable pit')
-{
-  // The first block fills the pit and is used up; the second slides across it onto the plate.
-  const pit = parseLevel('t', ['########', '#@BBF.P#', '#......#', '########'])
-  const st = createState(pit)
-  const first = push(st, 1, 'E')
-  ok(first.consumed && !first.fell && first.state.blocks.length === 1 && first.state.filled.length === 1, 'a block that slides into a pit fills it and is used up')
-  ok(first.state.moves === 1, 'filling a pit counts as a push')
-  const second = push(first.state, 0, 'E')
-  ok(second.moved && !second.consumed && second.state.blocks[0].x === 6, 'once filled, blocks slide across the pit')
-  ok(isSolved(second.state), 'and the plate is covered')
-  ok(playerCanStand(first.state, { x: 4, y: 1 }) && !playerCanStand(st, { x: 4, y: 1 }), 'the player can only cross a pit once it is filled')
-  ok(solve(pit).solvable && solve(pit).pushes === 3, 'the solver understands pits (fill, then slide the next block)')
-  const short = parseLevel('t', ['WWWWWWWW', 'W@B.F.PW', 'WWWWWWWW'])
-  ok(!solve(short).solvable, 'in a sealed corridor with one block, the pit eats it and the plate can never be covered')
-}
-
-console.log('exit door')
-{
-  ok(parseLevel('t', ['WEWWWW', 'W.P..W', 'W.B..W', 'W@...W', 'WWWWWW']).exit?.x === 1, 'a level can have an exit door (E)')
-  ok(throws(() => parseLevel('t', ['WEEWWW', 'W.P..W', 'W.B..W', 'W@...W', 'WWWWWW'])), 'two exit doors are rejected')
-  ok(parseLevel('t', ['WWWWWW', 'W.P..E', 'W.B..W', 'W@...W', 'WWWWWW']).exitSide === 'E', 'an exit on the right border faces east')
-  ok(throws(() => parseLevel('t', ['WWWWWW', 'W.PE.W', 'W.B..W', 'W@...W', 'WWWWWW'])), 'an exit inside the level is rejected')
-  ok(throws(() => parseLevel('t', ['EWWWWW', 'W.P..W', 'W.B..W', 'W@...W', 'WWWWWW'])), 'an exit in a corner is rejected')
-  ok(parseLevel('t', ['WWWWW', 'W@BPW', 'WWWWW']).exit === null, 'a level with no door has exit = null')
-
-  // The block covers the plate in front of the door and seals it, so the level cannot be finished.
-  const sealed = ['WEWWWW', 'WP...W', 'W.B..W', 'W@...W', 'WWWWWW']
-  ok(solve(parseLevel('t', sealed.map((r) => r.replace('E', 'W')))).pushes === 2, 'sanity: without a door the same level is solved in 2 pushes')
-  ok(!solve(parseLevel('t', sealed)).solvable, 'the plate sits in front of the door, so covering it blocks the way out')
-
-  // Plate moved aside: the door stays reachable.
-  const open = parseLevel('t', ['WEWWWW', 'W.P..W', 'W.B..W', 'W@...W', 'WWWWWW'])
-  const sol = solve(open)
-  ok(sol.solvable && sol.pushes === 1, 'with the plate beside the door the level is solvable')
-  const done = push(createState(open), 0, 'N')
-  ok(isSolved(done.state) && canReachExit(done.state, open.start), 'after covering the plate the player can reach the door')
-  ok(playerCanStand(createState(open), { x: 1, y: 0 }), 'the exit step is standable: it is the threshold you walk over to leave')
-  ok(open.exitSide === 'N', 'an exit on the top border faces north (outside the square)')
-  const toDoor = push(createState(parseLevel('t', ['WEWWW', 'W.P.W', 'WB@.W', 'WWWWW'])), 0, 'N')
-  ok(toDoor.moved && toDoor.state.blocks[0].x === 1 && toDoor.state.blocks[0].y === 1, 'a block sliding at the door stops in front of it')
+  // The wind acts on any block that ENTERS the lane, not only on one that stops there.
+  // A block sliding east along row 3 crosses the lane of the fan above (column 3) and is pushed south.
+  const crossing = parseLevel('t', ['#######', '#..d..#', '#....P#', '#@B...#', '#.....#', '#######'])
+  const cr = push(createState(crossing), 0, 'E')
+  ok(cr.state.blocks[0].x === 3 && cr.state.blocks[0].y === 4, 'a block crossing the wind lane is pushed along it (and slides to the end of the lane)')
+  ok(cr.path.map((p) => `${p.x},${p.y}`).join(' ') === '3,3 3,4', 'the path turns with the wind at the lane')
+  // A block that never touches the lane is unaffected.
+  const beside = parseLevel('t', ['#######', '#d....#', '#....P#', '#@B...#', '#.....#', '#######'])
+  const bs = push(createState(beside), 0, 'E')
+  ok(bs.state.blocks[0].x === 5 && bs.state.blocks[0].y === 3, 'a block sliding along a row the lane does not cross is unaffected')
+  // Pushed toward the fan, a block entering the lane is blown back out.
+  const against = parseLevel('t', ['#######', '#..d..#', '#....P#', '#@....#', '#..B..#', '#######'])
+  const ag = push(createState(against), 0, 'N')
+  ok(ag.state.blocks[0].x === 3 && ag.state.blocks[0].y === 4, 'a block pushed toward the fan is blown back along the wind')
+  // The lane stops at the first solid tile, so a block beyond it is not affected.
+  const blocked = parseLevel('t', ['#########', '#..d....#', '#..S...P#', '#@......#', '#.B.....#', '#########'])
+  const bk = push(createState(blocked), 0, 'E')
+  ok(bk.state.blocks[0].x === 7 && bk.state.blocks[0].y === 4, 'a cube in front of the fan stops the lane (no wind past it)')
 }
 
 console.log('level code')

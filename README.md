@@ -33,7 +33,7 @@ Levels are small ASCII grids. The same characters appear in the code, the editor
 | `S` | Static cube | Immovable. Stops blocks |
 | `N` | Snow patch | A sliding block that enters it **stops** there |
 | `^ > v <` | Arrow | A sliding block that enters it **turns** to face the arrow and keeps going |
-| `u r d l` | Fan (up, right, down, left) | Solid. When a block comes to rest in its wind lane (the line it faces), the wind pushes that block onward |
+| `u r d l` | Fan (up, right, down, left) | Solid. Blows along the line it faces, up to the first obstacle (its **wind lane**). A sliding block that **enters any lane tile is pushed along the wind**, like an arrow along the whole lane, and keeps sliding that way until something stops it |
 | `B` | Movable block | Start position of a block |
 | `@` | Player start | Where the player arrives |
 

@@ -11,8 +11,9 @@
 //   F  fillable pit: the first block that slides in is used up and fills it; after that it is plain floor
 //   N  snow patch: a sliding block that enters it stops there
 //   ^ > v <  arrow: a sliding block that enters it turns to face the arrow and keeps sliding
-//   u r d l  fan (up/right/down/left = north/east/south/west): a solid device. When a block comes to rest in its wind
-//            lane (the line it faces, up to the first obstacle), the wind pushes that block away from the fan.
+//   u r d l  fan (up/right/down/left = north/east/south/west): a solid device that blows along the line it faces, up to
+//            the first obstacle (its wind lane). A sliding block that enters any lane tile is pushed along the wind, like
+//            an arrow tile along the whole lane, and keeps sliding that way until something stops it.
 // Row 0 is the NORTH edge, so a level reads like a map seen from above.
 
 export interface Pt {
@@ -44,6 +45,7 @@ export interface Level {
   blocks: Pt[] // movable block start positions
   plates: Pt[]
   fans: { x: number; y: number; dir: Dir }[]
+  wind: (Dir | null)[][] // wind[y][x] = the direction the wind blows on that tile (a fan's lane), or null
   exit: Pt | null // the border step where the exit door is attached, if the level has one
   exitSide: Dir | null // which way outside the square the exit door faces (W / E / N / S)
   start: Pt
@@ -98,5 +100,15 @@ export function parseLevel(name: string, rows: string[]): Level {
   if (plates.length === 0) throw new Error('level has no pressure plate (P)')
   if (blocks.length < plates.length) throw new Error(`${plates.length} plates but only ${blocks.length} blocks`)
 
-  return { name, width, height: rows.length, rows: rows.slice(), tiles, blocks, plates, fans, exit, exitSide, start }
+  // wind lanes: from each fan, along the way it faces, until the first solid tile
+  const solid = (t: Tile) => t === '#' || t === 'W' || t === 'S' || t === 'E' || FAN_DIR[t] !== undefined
+  const wind: (Dir | null)[][] = tiles.map((r) => r.map(() => null))
+  for (const fan of fans) {
+    const d = DIR_DELTA[fan.dir]
+    for (let qx = fan.x + d.x, qy = fan.y + d.y; qx >= 0 && qy >= 0 && qx < width && qy < rows.length && !solid(tiles[qy][qx]); qx += d.x, qy += d.y) {
+      if (wind[qy][qx] === null) wind[qy][qx] = fan.dir
+    }
+  }
+
+  return { name, width, height: rows.length, rows: rows.slice(), tiles, blocks, plates, fans, wind, exit, exitSide, start }
 }
