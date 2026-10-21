@@ -152,6 +152,112 @@ export const LEVELS: Level[] = [
     '#.BS..#',
     'E..O..#',
     '#######'
+  ]),
+  // Levels 16-25 combine the mechanics. Found by tools/gen.ts (mode 2): every special tile type matters on its own,
+  // and no required standing spot is a pocket. Doors were placed by tools/doors.ts.
+  parseLevel('Powder Run', [
+    '#######',
+    '#..O@P#',
+    '#.S...#',
+    '#.....#',
+    'E..NNB#',
+    '#BSP..#',
+    '#######'
+  ]),
+  parseLevel('Sacrificial Wind', [
+    '##E####',
+    '#P.F.P#',
+    '#...l.#',
+    '#.B.@.#',
+    '#..S.O#',
+    '#B.B..#',
+    '#######'
+  ]),
+  parseLevel('Switchback', [
+    '#####E#',
+    '#.S.B.#',
+    '#.O.>P#',
+    '#.BvP.#',
+    '#@....#',
+    '#....S#',
+    '#######'
+  ]),
+  parseLevel('Double Gap', [
+    '#######E#',
+    '#O..BS..#',
+    '#......P#',
+    '#S...FB.#',
+    '#F..S...#',
+    '#..@P...#',
+    '#......B#',
+    '#.....B.#',
+    '#########'
+  ]),
+  parseLevel('Cushioned Fall', [
+    '#########',
+    '#.....OS#',
+    '#.SBN..B#',
+    '#.@.....#',
+    '#.O.....#',
+    '#....F..#',
+    '#.NP.BS.#',
+    '#....P..E',
+    '#########'
+  ]),
+  parseLevel('Gust and Gap', [
+    '#E#######',
+    '#.......#',
+    '#.......#',
+    '#P..B..F#',
+    '#S.u..B.#',
+    '#..B..SP#',
+    '#..S....#',
+    '#....O@.#',
+    '#########'
+  ]),
+  parseLevel('Drift and Turn', [
+    '#E#######',
+    '#......N#',
+    '#.S.B..S#',
+    '#P......#',
+    '#...O.NP#',
+    '#...B..@#',
+    '#......O#',
+    '#....^.S#',
+    '#########'
+  ]),
+  parseLevel('Wind Tunnel', [
+    '#########',
+    '#B......#',
+    '#..P....#',
+    '#Sr.PSO.#',
+    '#Bv...@.#',
+    '#.......#',
+    '#.......#',
+    'E.S....v#',
+    '#########'
+  ]),
+  parseLevel('Crossfire', [
+    '##E######',
+    '#O.P..B.#',
+    '#..S..S.#',
+    '#.B.....#',
+    '#P..r...#',
+    '#.S.....#',
+    '#d...O@.#',
+    '#.P....B#',
+    '#########'
+  ]),
+  parseLevel('The Long Slide', [
+    '#########',
+    '#.....u.#',
+    '#..S..P.#',
+    '#.OS@..B#',
+    '#.O.P...#',
+    '#PB.....#',
+    '#..r.S..#',
+    'E....B..#',
+    '#########'
   ])
 ]
 

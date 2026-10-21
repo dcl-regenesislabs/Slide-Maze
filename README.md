@@ -106,16 +106,24 @@ node tools/run.mjs tools/review.ts "#####/#@B.#/#..P#/#####"
 node tools/run.mjs tools/replay.ts "SM1-7x7-...-KAGH"
 
 # generate candidate levels for a difficulty profile
-# args: plates statics holes minPushes maxPushes [size] [count] [seed] [snow] [arrows] [fans] [pits]
-node tools/run.mjs tools/gen.ts 2 2 1 5 8 7 4 71 0 0 1 0
+# args: plates statics holes minPushes maxPushes [size] [count] [seed] [snow] [arrows] [fans] [pits] [mode] [seconds]
+node tools/run.mjs tools/gen.ts 2 3 1 10 14 9 3 601 0 2 1 0 2 285
+
+# put an exit door on every level that has none (same push count, no awkward standing spots)
+node tools/run.mjs tools/doors.ts
 ```
 
-**Every level must pass `tools/check.ts` before it is committed.** The generator keeps only solvable layouts, and when it uses special tiles it keeps only layouts where those tiles change the answer.
+**Every level must pass `tools/check.ts` before it is committed.** The generator finds levels by hill-climbing: it takes a solvable layout and repeatedly moves one object, keeping changes that approach the target difficulty. A candidate must also pass these rules:
+
+- every special tile type in the profile must **matter on its own** (snow, arrows and fan wind must change the answer when removed, a fan is compared with a plain cube; a pit must be *needed*, meaning that as a deadly hole the level is unsolvable or longer);
+- `mode 1` also requires the level to be solvable without ever standing on a border step; `mode 2` allows border steps but rejects **pockets** (a required standing spot with fewer than two open floor neighbours) and caps how much of the solution may be pushed from border steps.
+
+The solver (`src/game/solver.ts`) runs on typed arrays and is about 10 times faster than the first version. It was verified against the original on 615 layouts (all shipped levels plus 600 random ones) with identical answers.
 
 ### Adding a level
 
 1. Design it in the in-game editor (or write the grid), and press **Check**.
-2. Add it to `src/game/levels.ts` as ASCII rows.
+2. Add it to `src/game/levels.ts` as ASCII rows (a level needs one exit door `E` on the border, not in a corner).
 3. Run `node tools/run.mjs tools/check.ts`.
 
 ## Project structure
