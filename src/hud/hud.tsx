@@ -338,6 +338,14 @@ const HintBanner = () => (
   </UiEntity>
 )
 
+const ToastBanner = () => (
+  <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(84), left: 0 }, width: '100%', height: S(56), justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
+    <Card width={S(560)} height={S(52)} rim={PAL.good}>
+      <OutlineLabel value={session.toastText} fontSize={FS(20)} color={PAL.good} width="100%" height={S(32)} />
+    </Card>
+  </UiEntity>
+)
+
 /** Shown between covering the last plate and walking through the exit door. */
 const ExitBanner = () => (
   <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(84), left: 0 }, width: '100%', height: S(52), justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
@@ -353,13 +361,14 @@ export const Hud = () => {
     <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
       {!session.inLobby && <TopBar />}
       {session.unlocked && session.hasDoor && !session.solved && !editor.open && <ExitBanner />}
+      {Date.now() < session.toastUntil && !session.inLobby && !editor.open && <ToastBanner />}
       <SideButtons />
       {session.codeOpen && <CodePanel />}
       {session.menuOpen && <LevelMenu />}
       {Date.now() < session.hintUntil && !session.inLobby && <HintBanner />}
       {editor.open && <EditorPanel />}
       {myLevels.panelOpen && <MyLevelsPanel />}
-      {showComplete && !editor.open && !session.codeOpen && !session.menuOpen && <CompletePanel />}
+      {showComplete && !session.advancing && !editor.open && !session.codeOpen && !session.menuOpen && <CompletePanel />}
     </UiEntity>
   )
 }

@@ -5,6 +5,7 @@ import { ColliderLayer, engine, Entity, InputAction, Material, MeshCollider, Mes
 import { Color3, Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { copyToClipboard, movePlayerTo } from '~system/RestrictedActions'
 import { FX_COLORS, clearFx, confetti, dust, holeBurst, plateOn, setupFx, stopBurst, trail, windStreak } from './fx'
+import { buildCave, buildLevelLights } from './cave'
 import { buildLobby, LOBBY_SPAWN } from './lobby'
 import { ARROW_DIR, DIRS, DIR_DELTA, Dir, FAN_DIR, Level, Pt } from './grid'
 import { LEVELS, levelCode } from './levels'
@@ -49,6 +50,8 @@ const FAN_BLADE = Color4.create(0.85, 0.95, 1, 1)
 const FX_AMBER = FX_COLORS.amber
 const DOOR_LEAF = Color4.create(0.28, 0.36, 0.5, 1)
 const DOOR_RUNE = Color4.create(0.3, 0.9, 1, 1)
+const ISLAND = Color4.create(0.13, 0.17, 0.24, 1) // the rock the floating level hangs on
+const ISLAND_LIGHT = Color4.create(0.2, 0.26, 0.35, 1)
 
 interface Slide {
   index: number
@@ -244,18 +247,12 @@ function buildLevel(level: Level, index: number) {
         r.fans.push({ x: c.x, z: c.z, fx, fz, len })
       } else if (t === 'E') {
         // exit door: a gateway on the ice with two leaves. The leaves sink into the floor once every plate is covered.
-        const inward = DIRS.find((d) => {
-          const nx = x + DIR_DELTA[d].x
-          const ny = y + DIR_DELTA[d].y
-          return nx >= 0 && ny >= 0 && nx < level.width && ny < level.height && !['#', 'W', 'E'].includes(level.tiles[ny][nx])
-        })
-        const spansX = inward === 'N' || inward === 'S' || inward === undefined // the door faces along z, so it spans x
+        const spansX = gatewaySpansX(level, x, y) // the door faces along z, so it spans x
         const c = tileCentre(p, level, 0)
         box(r, tileCentre(p, level, FLOOR_TOP - FLOOR_THICK / 2), Vector3.create(TILE, FLOOR_THICK, TILE), (x + y) % 2 === 0 ? ICE_A : ICE_B, true, { metallic: 0.1, roughness: 0.12 })
         const at = (lat: number, y2: number) => Vector3.create(c.x + (spansX ? lat : 0), y2, c.z + (spansX ? 0 : lat))
         const sz = (lat: number, h: number, thick: number) => (spansX ? Vector3.create(lat, h, thick) : Vector3.create(thick, h, lat))
-        for (const side of [-1, 1]) box(r, at(side * (TILE / 2 - 0.3), FLOOR_TOP + 1.9), sz(0.6, 3.8, 0.7), WALL, true) // posts
-        box(r, at(0, FLOOR_TOP + 3.5), sz(TILE, 0.6, 0.7), WALL, true) // lintel
+        archFrame(r, c, spansX, FLOOR_TOP)
         const parts: Entity[] = []
         const baseY: number[] = []
         for (const side of [-1, 1]) {
@@ -321,10 +318,14 @@ function buildLevel(level: Level, index: number) {
     )
   }
 
+  buildUnderside(r)
+  buildEntrance(r)
   if (editor.open) buildPicks(r)
 
   session.inLobby = false
   session.unlocked = false
+  session.advancing = false
+  advanceIn = 0
   session.hasDoor = level.exit !== null
   session.levelIndex = index
   session.name = level.name
@@ -341,6 +342,33 @@ function buildLevel(level: Level, index: number) {
   pushEffort.progress = 0
   pushEffort.blockIndex = -1
   refreshPlates(false)
+}
+
+/** The level floats, so hang a tapering mass of rock under it (a stepped inverted pyramid with a few spikes). */
+function buildUnderside(r: Runtime) {
+  const level = r.level
+  const w = level.width * TILE
+  const d = level.height * TILE
+  const layers: [number, number, number, number][] = [
+    // [size factor, height, yaw, centre depth below the slab]
+    [0.96, 2.2, 4, 1.1],
+    [0.74, 2.6, -7, 3.5],
+    [0.5, 2.6, 9, 6.1],
+    [0.3, 2.2, -5, 8.4]
+  ]
+  layers.forEach(([k, h, yaw, depth], i) => {
+    box(r, Vector3.create(ORIGIN.x, ELEV - depth, ORIGIN.z), Vector3.create(w * k, h, d * k), i % 2 === 0 ? ISLAND : ISLAND_LIGHT, false, { roughness: 0.95 })
+    Transform.getMutable(r.entities[r.entities.length - 1]).rotation = Quaternion.fromEulerDegrees(0, yaw, 0)
+  })
+  // spikes hanging off the edge, in a fixed pattern so a level always looks the same
+  const spikes = Math.min(14, 6 + Math.floor(level.width / 2))
+  for (let i = 0; i < spikes; i++) {
+    const a = (i / spikes) * Math.PI * 2
+    const rx = (w / 2) * 0.82 * (0.7 + 0.3 * Math.abs(Math.sin(i * 2.3)))
+    const rz = (d / 2) * 0.82 * (0.7 + 0.3 * Math.abs(Math.cos(i * 1.7)))
+    const len = 2.5 + 3 * Math.abs(Math.sin(i * 3.1))
+    box(r, Vector3.create(ORIGIN.x + Math.cos(a) * rx, ELEV - 1.5 - len / 2, ORIGIN.z + Math.sin(a) * rz), Vector3.create(1, len, 1), ISLAND_LIGHT, false, { roughness: 0.9 })
+  }
 }
 
 /** Called when a cell is clicked in the 3D view while editing. Set by editor.ts (world must not import the editor). */
@@ -393,6 +421,44 @@ function refreshPlates(fx: boolean) {
       plateOn(c.x, FLOOR_TOP, c.z)
     }
     p.on = on
+  }
+}
+
+// ---- Gateways ----
+/** Which way a border tile faces into the room, as whether its opening spans x (true) or z. */
+function gatewaySpansX(level: Level, x: number, y: number): boolean {
+  const inward = DIRS.find((d) => {
+    const nx = x + DIR_DELTA[d].x
+    const ny = y + DIR_DELTA[d].y
+    return nx >= 0 && ny >= 0 && nx < level.width && ny < level.height && !['#', 'W', 'E'].includes(level.tiles[ny][nx])
+  })
+  return inward === 'N' || inward === 'S' || inward === undefined
+}
+
+/** Two posts and a lintel standing on `baseY`, framing an opening that spans x or z. */
+function archFrame(r: Runtime, c: Vector3, spansX: boolean, baseY: number) {
+  const at = (lat: number, y: number) => Vector3.create(c.x + (spansX ? lat : 0), y, c.z + (spansX ? 0 : lat))
+  const sz = (lat: number, h: number, thick: number) => (spansX ? Vector3.create(lat, h, thick) : Vector3.create(thick, h, lat))
+  for (const side of [-1, 1]) box(r, at(side * (TILE / 2 - 0.3), baseY + 1.9), sz(0.6, 3.8, 0.7), WALL, true) // posts
+  box(r, at(0, baseY + 3.5), sz(TILE, 0.6, 0.7), WALL, true) // lintel
+  box(r, at(0, baseY + 3.15), sz(TILE - 1.2, 0.1, 0.5), DOOR_RUNE, false, { glow: 0.9, roughness: 0.4 }) // rune strip under the lintel
+}
+
+/** The entrance: an open arch on the border tile nearest the start, where the player arrives. Purely visual. */
+function buildEntrance(r: Runtime) {
+  const l = r.level
+  const s = l.start
+  // the four border tiles in line with the start, nearest first
+  const options = [
+    { d: s.x, x: 0, y: s.y },
+    { d: l.width - 1 - s.x, x: l.width - 1, y: s.y },
+    { d: s.y, x: s.x, y: 0 },
+    { d: l.height - 1 - s.y, x: s.x, y: l.height - 1 }
+  ].sort((a, b) => a.d - b.d)
+  for (const o of options) {
+    if (l.tiles[o.y][o.x] !== '#') continue // only on a step, never over a wall, hole or the exit
+    archFrame(r, tileCentre({ x: o.x, y: o.y }, l, 0), gatewaySpansX(l, o.x, o.y), FLOOR_TOP + STEP_HEIGHT)
+    return
   }
 }
 
@@ -691,6 +757,26 @@ function completeLevel() {
     confetti(c.x, FLOOR_TOP, c.z)
   }
   if (rt.door) confetti(rt.door.cx, FLOOR_TOP, rt.door.cz)
+  // walking through the door takes you on to the next level, with the result shown as a short toast there
+  if (rt.door && hasNextLevel()) {
+    session.advancing = true
+    advanceIn = 1.1
+    session.toastText = `Level ${session.levelIndex + 1} complete!   ${session.moves} ${session.moves === 1 ? 'move' : 'moves'}   ${fmtTime(ms)}`
+    session.toastUntil = Date.now() + 4500
+  }
+}
+
+let advanceIn = 0
+function advanceSystem(dt: number) {
+  if (advanceIn <= 0) return
+  advanceIn -= dt
+  if (advanceIn <= 0) nextLevel()
+}
+
+function fmtTime(ms: number): string {
+  const t = Math.floor(ms / 100)
+  const s = Math.floor(t / 10)
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}.${t % 10}`
 }
 
 /** Animates the door and finishes the level when the player walks into the open doorway. */
@@ -806,6 +892,8 @@ function playerFallSystem(dt: number) {
 }
 
 export function setupWorld() {
+  buildCave() // the dark cavern around everything
+  buildLevelLights(ORIGIN, ELEV)
   buildLobby() // the game starts in the lobby: no level is built until one is picked
   setupFx()
   engine.addSystem(pushSystem, 9, 'sm-push')
@@ -814,4 +902,5 @@ export function setupWorld() {
   engine.addSystem(fanSystem, 6, 'sm-fan')
   engine.addSystem(doorSystem, 6, 'sm-door')
   engine.addSystem(hintSystem, 5, 'sm-hint')
+  engine.addSystem(advanceSystem, 5, 'sm-advance')
 }

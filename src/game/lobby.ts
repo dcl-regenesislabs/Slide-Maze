@@ -36,8 +36,8 @@ export function buildLobby() {
   const W = 30
   const D = 24
 
-  // floor (its top is at ground level so the avatar just walks on it)
-  part(Vector3.create(c.x, -0.05, c.z), Vector3.create(W, 0.1, D), FLOOR, { collider: true, rough: 0.15, metal: 0.1 })
+  // floor (a hair above the cave floor, so the avatar just walks on it)
+  part(Vector3.create(c.x, 0.0, c.z), Vector3.create(W, 0.1, D), FLOOR, { collider: true, rough: 0.15, metal: 0.1 })
 
   // cave walls: back, two sides, and a low front lip behind the spawn
   part(Vector3.create(c.x, 3.5, c.z + D / 2), Vector3.create(W + 1, 7, 1), ROCK, { collider: true })

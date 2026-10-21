@@ -17,6 +17,9 @@ export interface Session {
   codeOpen: boolean
   menuOpen: boolean // the level-select menu
   copiedAt: number // Date.now() of the last successful copy, for the "Copied!" flash
+  advancing: boolean // the level is finished and the next one is about to load
+  toastText: string // a short message shown across levels (e.g. the result of the level you just finished)
+  toastUntil: number
   hintText: string // the message shown with a hint
   hintUntil: number // Date.now() until which the hint message is shown
 }
@@ -35,6 +38,9 @@ export const session: Session = {
   codeOpen: false,
   menuOpen: false,
   copiedAt: 0,
+  advancing: false,
+  toastText: '',
+  toastUntil: 0,
   hintText: '',
   hintUntil: 0
 }
