@@ -47,11 +47,11 @@ export const isOpenPit = (state: GameState, p: Pt) =>
 /** Tiles that stop a sliding block (and the wind). */
 const solidForBlocks = (t: Tile) => t === '#' || t === 'W' || t === 'S' || t === 'E' || FAN_DIR[t] !== undefined
 
-/** Can the player stand on this tile? Steps (#) are fine; full walls, static cubes, fans, blocks and holes are not. */
+/** Can the player stand on this tile? Steps (# and the exit step E) are fine; full walls, static cubes, fans, blocks and holes are not. */
 export function playerCanStand(state: GameState, p: Pt): boolean {
   if (!inBounds(state.level, p)) return false
   const t = state.level.tiles[p.y][p.x]
-  if (t === 'W' || t === 'S' || t === 'O' || t === 'E' || FAN_DIR[t] !== undefined) return false
+  if (t === 'W' || t === 'S' || t === 'O' || FAN_DIR[t] !== undefined) return false
   if (isOpenPit(state, p)) return false
   return blockAt(state, p) === -1
 }
@@ -141,12 +141,11 @@ export function reachable(state: GameState, from: Pt): { set: Set<number>; canon
   return { set, canon }
 }
 
-/** Can the player walk up to the exit door from where they stand? True when the level has no door. */
+/** Can the player get onto the exit step (the door is just outside it)? True when the level has no door. */
 export function canReachExit(state: GameState, from: Pt): boolean {
   const exit = state.level.exit
   if (!exit) return true
-  const { set } = reachable(state, from)
-  return DIRS.some((d) => set.has((exit.y + DIR_DELTA[d].y) * state.level.width + exit.x + DIR_DELTA[d].x))
+  return reachable(state, from).set.has(exit.y * state.level.width + exit.x)
 }
 
 export function isPlateCovered(state: GameState, plate: Pt): boolean {

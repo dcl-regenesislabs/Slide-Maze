@@ -13,7 +13,7 @@ The whole floor is ice. Walk into a block and it **slides** across the level unt
 - **Levels float 12 m above the ground.** Falling into a hole, or off the edge, resets the level.
 - **Step ledges** (`#`) around the room are low enough to jump onto. You can walk along them and push blocks from that side. Blocks still stop against them.
 - You start in a **lobby** inside a greybox **cave**. A terminal opens the level-select menu.
-- Every level has an **entrance arch** where you arrive and an **exit door**. Walking through the open exit takes you on to the next level.
+- Every level has an **entrance** and an **exit door**, both small annexes built *outside* the playfield square, so they are not part of the puzzle grid. You arrive through the entrance, and walking out through the open exit takes you on to the next level. (The solver treats the exit step as a normal walkable ledge, so a level is only solvable if you can reach it.)
 - **Progress is saved per wallet** on the server: completed levels and your best moves and time. The server checks reported results (a real level, at least the optimal number of pushes, not faster than a push physically takes).
 - The **Hint** button solves the level from where it stands and marks the next push.
 
@@ -29,7 +29,7 @@ Levels are small ASCII grids. The same characters appear in the code, the editor
 | `O` | Hole | A block or the player that goes in is lost, and the level resets |
 | `F` | Fillable pit | The first block that slides in is **used up** and the pit becomes floor. After that, blocks slide across it |
 | `P` | Pressure plate | Cover all of them at the same time to open the exit door |
-| `E` | Exit door | On the border, one per level. Sealed until every plate is covered, then you finish the level by **walking through it**. A level with no door finishes when the plates are covered |
+| `E` | Exit | A walkable step **on the border** (not a corner), one per level. The exit door itself is an annex built **outside** the square, attached to this step. It stays sealed until every plate is covered, then you finish the level by walking out through it. A level with no `E` finishes when the plates are covered |
 | `S` | Static cube | Immovable. Stops blocks |
 | `N` | Snow patch | A sliding block that enters it **stops** there |
 | `^ > v <` | Arrow | A sliding block that enters it **turns** to face the arrow and keeps going |
@@ -66,6 +66,7 @@ Press the **Editor** button (desktop only). You build in the 3D world itself, a 
 - **Hotbar along the bottom** with every item (ice, step, wall, hole, pit, exit, plate, cube, block, start, snow, arrow, fan). Click a slot, or press **E** (next item) and **1** (previous item).
 - **Aim at a tile and click to place.** A highlight and a see-through preview of the selected item show exactly where it will go. The tile grid is drawn on the floor.
 - **F erases** the tile you are aiming at. **2** turns an arrow or fan. **3 / 4** undo and redo.
+- **Level size:** the toolbar has `+N -N +S -S +W -W +E -E` buttons to grow or shrink any edge by a row or column (the new line goes just inside the border). Levels can be 5 to 31 tiles per side, the most that fits the 128 m arena. A bigger level needs a bigger scene.
 - **Toolbar (top left):** Undo, Redo, a Mode button (Paint, Fill, or Rect for two-corner rectangles), **Hint**, **Check**, **Play**, Reset blocks, Tools and Exit.
 - **Check** runs the real solver and reports whether the level is solvable and the fewest pushes. **Play** test-plays from the start. You can also just walk around and push blocks in the level while you edit.
 - **Tools panel:** the grid as a map you can click, resize (5 to 31 tiles per side), Flip H / Flip V / Rotate (arrows and fans turn with it, and `tools/check.ts` verifies a flipped or rotated level keeps its push count), New, **Save to my levels** (stored on the server for your wallet, up to 20), My levels, level code import and **Copy level code**.

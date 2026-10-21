@@ -4,7 +4,7 @@
 
 import { parseLevel } from '../src/game/grid'
 import { decodeLevelCode, encodeLevelCode } from '../src/game/levelCode'
-import { fillRect, flipHorizontal, flipVertical, floodFill, rotateRight } from '../src/game/editorOps'
+import { fillRect, flipHorizontal, flipVertical, floodFill, growEdgeRows, rotateRight } from '../src/game/editorOps'
 import { LEVELS, levelCode } from '../src/game/levels'
 import { canReachExit, createState, isSolved, playerCanStand, push } from '../src/game/logic'
 import { solve, solveFrom } from './solver'
@@ -114,6 +114,9 @@ console.log('exit door')
 {
   ok(parseLevel('t', ['WEWWWW', 'W.P..W', 'W.B..W', 'W@...W', 'WWWWWW']).exit?.x === 1, 'a level can have an exit door (E)')
   ok(throws(() => parseLevel('t', ['WEEWWW', 'W.P..W', 'W.B..W', 'W@...W', 'WWWWWW'])), 'two exit doors are rejected')
+  ok(parseLevel('t', ['WWWWWW', 'W.P..E', 'W.B..W', 'W@...W', 'WWWWWW']).exitSide === 'E', 'an exit on the right border faces east')
+  ok(throws(() => parseLevel('t', ['WWWWWW', 'W.PE.W', 'W.B..W', 'W@...W', 'WWWWWW'])), 'an exit inside the level is rejected')
+  ok(throws(() => parseLevel('t', ['EWWWWW', 'W.P..W', 'W.B..W', 'W@...W', 'WWWWWW'])), 'an exit in a corner is rejected')
   ok(parseLevel('t', ['WWWWW', 'W@BPW', 'WWWWW']).exit === null, 'a level with no door has exit = null')
 
   // The block covers the plate in front of the door and seals it, so the level cannot be finished.
@@ -127,7 +130,8 @@ console.log('exit door')
   ok(sol.solvable && sol.pushes === 1, 'with the plate beside the door the level is solvable')
   const done = push(createState(open), 0, 'N')
   ok(isSolved(done.state) && canReachExit(done.state, open.start), 'after covering the plate the player can reach the door')
-  ok(!playerCanStand(createState(open), { x: 1, y: 0 }), 'the door tile itself is not standable (it is where you exit)')
+  ok(playerCanStand(createState(open), { x: 1, y: 0 }), 'the exit step is standable: it is the threshold you walk over to leave')
+  ok(open.exitSide === 'N', 'an exit on the top border faces north (outside the square)')
   const toDoor = push(createState(parseLevel('t', ['WEWWW', 'W.P.W', 'WB@.W', 'WWWWW'])), 0, 'N')
   ok(toDoor.moved && toDoor.state.blocks[0].x === 1 && toDoor.state.blocks[0].y === 1, 'a block sliding at the door stops in front of it')
 }
@@ -171,6 +175,25 @@ console.log('editor operations')
       const p = solve(parseLevel('v', rows)).pushes
       ok(p === base, `level ${i + 1} ${name}: still ${base} pushes${p === base ? '' : ` (got ${p})`}`)
     }
+  }
+}
+
+console.log('growing and shrinking')
+{
+  const base = ['#######', '#.....#', '#..B..#', '#.P..@#', '#######']
+  for (const edge of ['N', 'S', 'E', 'W'] as const) {
+    const grown = growEdgeRows(base, edge, 1)
+    ok(JSON.stringify(growEdgeRows(grown, edge, -1)) === JSON.stringify(base), `growing the ${edge} edge then shrinking it gives the original back`)
+    const w = grown[0].length
+    const ringOk = grown[0] === '#'.repeat(w) && grown[grown.length - 1] === '#'.repeat(w) && grown.every((r) => r[0] === '#' && r[w - 1] === '#')
+    ok(ringOk && grown.length * w > base.length * base[0].length, `growing the ${edge} edge keeps the border ring and adds ice inside it`)
+  }
+  // an exit step on the border must stay on the border whichever edge grows
+  const lvl = ['#######', '#.....#', '#..B..#', '#.P..@#', '###E###']
+  for (const edge of ['N', 'S', 'E', 'W'] as const) {
+    const g = growEdgeRows(lvl, edge, 1)
+    const onBorder = parseLevel('g', g).exit
+    ok(onBorder !== null, `an exit step on the border is still a valid exit after growing the ${edge} edge`)
   }
 }
 

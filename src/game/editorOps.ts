@@ -52,3 +52,25 @@ export function rotateRight(rows: string[]): string[] {
   }
   return out
 }
+
+export type Edge = 'N' | 'S' | 'E' | 'W'
+
+/**
+ * Add (+1) or remove (-1) one row or column on one edge. The new line goes just inside the border, so the border ring
+ * (and an exit step on it) stays where it is, and a removed line is the interior one next to the border.
+ */
+export function growEdgeRows(rows: string[], edge: Edge, delta: 1 | -1): string[] {
+  const cells = toCells(rows)
+  const h = cells.length
+  const w = cells[0].length
+  if (edge === 'N' || edge === 'S') {
+    if (delta > 0) cells.splice(edge === 'N' ? 1 : h - 1, 0, Array.from({ length: w }, (_, x) => (x === 0 || x === w - 1 ? '#' : '.')))
+    else cells.splice(edge === 'N' ? 1 : h - 2, 1)
+  } else {
+    for (let y = 0; y < h; y++) {
+      if (delta > 0) cells[y].splice(edge === 'W' ? 1 : w - 1, 0, y === 0 || y === h - 1 ? '#' : '.')
+      else cells[y].splice(edge === 'W' ? 1 : w - 2, 1)
+    }
+  }
+  return fromCells(cells)
+}

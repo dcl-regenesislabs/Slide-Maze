@@ -6,7 +6,7 @@ import { engine, InputAction, inputSystem, PointerEventType } from '@dcl/sdk/ecs
 import { copyToClipboard } from '~system/RestrictedActions'
 import { activeLevel, buildCustom, hideCursor, loadLevel, restartLevel, returnToLobby, setCellClickHandler, setCellHoverHandler, teleportToStart, updateCursor } from './world'
 import { Level, parseLevel } from './grid'
-import { fillRect, flipHorizontal, flipVertical, floodFill, rotateRight } from './editorOps'
+import { Edge, fillRect, flipHorizontal, flipVertical, floodFill, growEdgeRows, rotateRight } from './editorOps'
 import { decodeLevelCode, encodeLevelCode } from './levelCode'
 import { solve } from './solver'
 import { editor, EditorTool, session } from './session'
@@ -266,21 +266,30 @@ export function newBlank(w = 7, h = 7) {
   refresh()
 }
 
-/** Grow or shrink the grid. The inside is kept where it fits and the outer ring is redrawn as steps. */
-export function resize(dw: number, dh: number) {
-  const oldH = editor.rows.length
-  const oldW = editor.rows[0].length
-  const w = Math.max(MIN_SIZE, Math.min(MAX_SIZE, oldW + dw))
-  const h = Math.max(MIN_SIZE, Math.min(MAX_SIZE, oldH + dh))
-  if (w === oldW && h === oldH) return
+export type { Edge }
+
+/** Add or remove one row / column on an edge (see growEdgeRows), with limits and an undo step. */
+export function growEdge(edge: Edge, delta: 1 | -1) {
+  const vertical = edge === 'N' || edge === 'S'
+  const next = (vertical ? editor.rows.length : editor.rows[0].length) + delta
+  if (next < MIN_SIZE) {
+    say('info', `A level needs at least ${MIN_SIZE} tiles each way.`)
+    return
+  }
+  if (next > MAX_SIZE) {
+    say('info', `${MAX_SIZE} tiles is the largest that fits the arena. A bigger level needs a bigger scene.`)
+    return
+  }
   snapshot()
-  editor.rows = Array.from({ length: h }, (_, y) =>
-    Array.from({ length: w }, (_, x) => {
-      if (x === 0 || y === 0 || x === w - 1 || y === h - 1) return '#'
-      return x < oldW - 1 && y < oldH - 1 ? editor.rows[y][x] : '.'
-    }).join('')
-  )
+  editor.rows = growEdgeRows(editor.rows, edge, delta)
+  say('info', `${editor.rows[0].length} x ${editor.rows.length}`)
   refresh()
+}
+
+/** Grow or shrink the east / south edge (kept for the tools panel's width and height buttons). */
+export function resize(dw: number, dh: number) {
+  if (dw) growEdge('E', dw > 0 ? 1 : -1)
+  if (dh) growEdge('S', dh > 0 ? 1 : -1)
 }
 
 /** Open the editor on a level that came from somewhere else (a saved level). */

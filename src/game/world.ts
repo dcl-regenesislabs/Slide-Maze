@@ -9,7 +9,7 @@ import { buildCave, buildLevelLights } from './cave'
 import { buildLobby, LOBBY_SPAWN } from './lobby'
 import { ARROW_DIR, DIRS, DIR_DELTA, Dir, FAN_DIR, Level, Pt } from './grid'
 import { LEVELS, levelCode } from './levels'
-import { GameState, createState, isPlateCovered, isSolved, playerCanStand, push } from './logic'
+import { GameState, createState, isPlateCovered, isSolved, playerCanStand, push, reachable } from './logic'
 import { solveFrom } from './solver'
 import { editor, progress, session } from './session'
 
@@ -76,6 +76,7 @@ interface Runtime {
   blocks: Entity[]
   plates: { entity: Entity; pt: Pt; on: boolean }[]
   fans: { x: number; z: number; fx: number; fz: number; len: number }[] // wind lanes, for the wind streaks
+  spawn: Vector3 | null // where the player arrives (the entrance annex), or null = the start tile
   door: { parts: Entity[]; baseY: number[]; open: number; target: boolean; cx: number; cz: number } | null // the exit door
   pits: Record<string, Entity[]> // lip pieces of each open fillable pit, by 'x,y'
   fills: { entity: Entity; t: number; toY: number }[] // floor tiles rising into filled pits
@@ -205,6 +206,7 @@ function buildLevel(level: Level, index: number) {
     blocks: [],
     plates: [],
     fans: [],
+    spawn: null,
     door: null,
     pits: {},
     fills: [],
@@ -219,9 +221,14 @@ function buildLevel(level: Level, index: number) {
     for (let x = 0; x < level.width; x++) {
       const t = level.tiles[y][x]
       const p = { x, y }
-      if (t === '#') {
+      if (t === '#' || t === 'E') {
         const h = FLOOR_THICK + STEP_HEIGHT
         box(r, tileCentre(p, level, ELEV + h / 2), Vector3.create(TILE, h, TILE), STEP, true, { roughness: 0.6 })
+        if (t === 'E' && level.exitSide) {
+          // the exit step: a walkable ledge with a glowing threshold. The door itself stands outside the square.
+          box(r, tileCentre(p, level, FLOOR_TOP + STEP_HEIGHT + 0.03), Vector3.create(TILE * 0.7, 0.06, TILE * 0.7), DOOR_RUNE, false, { glow: 0.8, roughness: 0.4 })
+          r.door = buildAnnex(r, p, level.exitSide, true)
+        }
       } else if (t === 'W') {
         box(r, tileCentre(p, level, ELEV + WALL_HEIGHT / 2), Vector3.create(TILE, WALL_HEIGHT, TILE), WALL, true)
       } else if (FAN_DIR[t]) {
@@ -247,25 +254,6 @@ function buildLevel(level: Level, index: number) {
           len++
         }
         r.fans.push({ x: c.x, z: c.z, fx, fz, len })
-      } else if (t === 'E') {
-        // exit door: a gateway on the ice with two leaves. The leaves sink into the floor once every plate is covered.
-        const spansX = gatewaySpansX(level, x, y) // the door faces along z, so it spans x
-        const c = tileCentre(p, level, 0)
-        box(r, tileCentre(p, level, FLOOR_TOP - FLOOR_THICK / 2), Vector3.create(TILE, FLOOR_THICK, TILE), (x + y) % 2 === 0 ? ICE_A : ICE_B, true, { metallic: 0.1, roughness: 0.12 })
-        const at = (lat: number, y2: number) => Vector3.create(c.x + (spansX ? lat : 0), y2, c.z + (spansX ? 0 : lat))
-        const sz = (lat: number, h: number, thick: number) => (spansX ? Vector3.create(lat, h, thick) : Vector3.create(thick, h, lat))
-        archFrame(r, c, spansX, FLOOR_TOP)
-        const parts: Entity[] = []
-        const baseY: number[] = []
-        for (const side of [-1, 1]) {
-          const leafY = FLOOR_TOP + 1.6
-          parts.push(box(r, at(side * (TILE / 4 - 0.02), leafY), sz(TILE / 2 - 0.3, 3.2, 0.5), DOOR_LEAF, true, { roughness: 0.6 }))
-          baseY.push(leafY)
-          // a dim rune bar across each leaf; it is what lights up on the real art
-          parts.push(box(r, at(side * (TILE / 4 - 0.02), leafY + 0.4), sz(TILE / 2 - 0.9, 0.14, 0.56), DOOR_RUNE, false, { glow: 0.25, roughness: 0.4 }))
-          baseY.push(leafY + 0.4)
-        }
-        r.door = { parts, baseY, open: 0, target: false, cx: c.x, cz: c.z }
       } else if (t === 'O') {
         // no floor at all: the level floats, so a block or the avatar that goes in really drops to the ground below
       } else if (t === 'F') {
@@ -399,7 +387,7 @@ const GHOST: Record<string, [number, Color4]> = {
   W: [WALL_HEIGHT - FLOOR_THICK, WALL],
   O: [0.08, PIT],
   F: [0.14, PIT_LIP],
-  E: [3.8, DOOR_RUNE],
+  E: [STEP_HEIGHT, DOOR_RUNE],
   P: [0.1, PLATE_OFF],
   S: [BLOCK_SIZE, STATIC],
   B: [BLOCK_SIZE, MOVABLE],
@@ -465,7 +453,8 @@ function buildPicks(r: Runtime) {
       const t = level.tiles[y][x]
       let top = FLOOR_TOP + 0.1
       if (t === '#') top = FLOOR_TOP + STEP_HEIGHT
-      else if (t === 'W' || t === 'E') top = ELEV + WALL_HEIGHT
+      else if (t === 'W') top = ELEV + WALL_HEIGHT
+      else if (t === 'E') top = FLOOR_TOP + STEP_HEIGHT
       else if (t === 'S' || blockCells.has(`${x},${y}`)) top = FLOOR_TOP + BLOCK_SIZE
       else if (FAN_DIR[t]) top = FLOOR_TOP + 1.6
       const h = top - ELEV
@@ -485,7 +474,7 @@ export const activeLevel = () => active.level
 export function teleportToStart() {
   if (!rt) return
   const l = rt.level
-  const pos = tileCentre(l.start, l, FLOOR_TOP + 0.1)
+  const pos = rt.spawn ?? tileCentre(l.start, l, FLOOR_TOP + 0.1)
   void movePlayerTo({
     newRelativePosition: pos,
     cameraTarget: Vector3.create(ORIGIN.x, FLOOR_TOP + 1, ORIGIN.z)
@@ -508,16 +497,6 @@ function refreshPlates(fx: boolean) {
 }
 
 // ---- Gateways ----
-/** Which way a border tile faces into the room, as whether its opening spans x (true) or z. */
-function gatewaySpansX(level: Level, x: number, y: number): boolean {
-  const inward = DIRS.find((d) => {
-    const nx = x + DIR_DELTA[d].x
-    const ny = y + DIR_DELTA[d].y
-    return nx >= 0 && ny >= 0 && nx < level.width && ny < level.height && !['#', 'W', 'E'].includes(level.tiles[ny][nx])
-  })
-  return inward === 'N' || inward === 'S' || inward === undefined
-}
-
 /** Two posts and a lintel standing on `baseY`, framing an opening that spans x or z. */
 function archFrame(r: Runtime, c: Vector3, spansX: boolean, baseY: number) {
   const at = (lat: number, y: number) => Vector3.create(c.x + (spansX ? lat : 0), y, c.z + (spansX ? 0 : lat))
@@ -527,10 +506,59 @@ function archFrame(r: Runtime, c: Vector3, spansX: boolean, baseY: number) {
   box(r, at(0, baseY + 3.15), sz(TILE - 1.2, 0.1, 0.5), DOOR_RUNE, false, { glow: 0.9, roughness: 0.4 }) // rune strip under the lintel
 }
 
-/** The entrance: an open arch on the border tile nearest the start, where the player arrives. Purely visual. */
+const SIDE_VEC: Record<Dir, { x: number; z: number }> = { N: { x: 0, z: 1 }, S: { x: 0, z: -1 }, E: { x: 1, z: 0 }, W: { x: -1, z: 0 } }
+
+/**
+ * A short corridor attached to the OUTSIDE of the level's border at `borderPt`, facing `side`: a floor tile, two side
+ * walls and an arch at the far end. With `withDoor` the arch is closed by two leaves (the exit); without, it is open
+ * (the entrance). Being outside the square, it is not part of the puzzle grid.
+ */
+function buildAnnex(r: Runtime, borderPt: Pt, side: Dir, withDoor: boolean): NonNullable<Runtime['door']> {
+  const level = r.level
+  const o = SIDE_VEC[side]
+  const bc = tileCentre(borderPt, level, 0)
+  const cx = bc.x + o.x * TILE
+  const cz = bc.z + o.z * TILE
+  const spansX = o.z !== 0 // the opening faces along z, so it spans x
+  box(r, Vector3.create(cx, FLOOR_TOP - FLOOR_THICK / 2, cz), Vector3.create(TILE, FLOOR_THICK, TILE), ICE_B, true, { metallic: 0.1, roughness: 0.12 })
+  box(r, Vector3.create(cx, ELEV - 1.4, cz), Vector3.create(TILE * 0.9, 2.2, TILE * 0.9), ISLAND, false, { roughness: 0.95 })
+  // side walls, from the border inwards to the arch
+  for (const lat of [-(TILE / 2 - 0.3), TILE / 2 - 0.3]) {
+    const len = TILE - 0.7
+    const mx = cx - o.x * 0.35 + (spansX ? lat : 0)
+    const mz = cz - o.z * 0.35 + (spansX ? 0 : lat)
+    box(r, Vector3.create(mx, ELEV + WALL_HEIGHT / 2, mz), spansX ? Vector3.create(0.6, WALL_HEIGHT, len) : Vector3.create(len, WALL_HEIGHT, 0.6), WALL, true)
+  }
+  const edge = Vector3.create(cx + o.x * (TILE / 2 - 0.35), 0, cz + o.z * (TILE / 2 - 0.35))
+  archFrame(r, edge, spansX, FLOOR_TOP)
+  const parts: Entity[] = []
+  const baseY: number[] = []
+  if (withDoor) {
+    const at = (lat: number, y: number) => Vector3.create(edge.x + (spansX ? lat : 0), y, edge.z + (spansX ? 0 : lat))
+    const sz = (lat: number, h: number, thick: number) => (spansX ? Vector3.create(lat, h, thick) : Vector3.create(thick, h, lat))
+    for (const side2 of [-1, 1]) {
+      const leafY = FLOOR_TOP + 1.6
+      parts.push(box(r, at(side2 * (TILE / 4 - 0.02), leafY), sz(TILE / 2 - 0.3, 3.2, 0.5), DOOR_LEAF, true, { roughness: 0.6 }))
+      baseY.push(leafY)
+      // a dim rune bar across each leaf; it is what lights up on the real art
+      parts.push(box(r, at(side2 * (TILE / 4 - 0.02), leafY + 0.4), sz(TILE / 2 - 0.9, 0.14, 0.56), DOOR_RUNE, false, { glow: 0.25, roughness: 0.4 }))
+      baseY.push(leafY + 0.4)
+    }
+  }
+  return { parts, baseY, open: 0, target: false, cx, cz }
+}
+
+/** The border side a border tile is on, as the direction pointing out of the square. */
+const outwardSide = (level: Level, p: Pt): Dir => (p.x === 0 ? 'W' : p.x === level.width - 1 ? 'E' : p.y === 0 ? 'N' : 'S')
+
+/**
+ * The entrance: an open annex outside the border step nearest the start. The player arrives in it and walks in. Only
+ * used when the solver confirms that step can be reached from the start, so it never changes what is solvable.
+ */
 function buildEntrance(r: Runtime) {
   const l = r.level
   const s = l.start
+  const reach = reachable(r.state, s).set
   // the four border tiles in line with the start, nearest first
   const options = [
     { d: s.x, x: 0, y: s.y },
@@ -539,8 +567,9 @@ function buildEntrance(r: Runtime) {
     { d: l.height - 1 - s.y, x: s.x, y: l.height - 1 }
   ].sort((a, b) => a.d - b.d)
   for (const o of options) {
-    if (l.tiles[o.y][o.x] !== '#') continue // only on a step, never over a wall, hole or the exit
-    archFrame(r, tileCentre({ x: o.x, y: o.y }, l, 0), gatewaySpansX(l, o.x, o.y), FLOOR_TOP + STEP_HEIGHT)
+    if (l.tiles[o.y][o.x] !== '#' || !reach.has(o.y * l.width + o.x)) continue // a step you can actually walk onto
+    const annex = buildAnnex(r, { x: o.x, y: o.y }, outwardSide(l, o), false)
+    r.spawn = Vector3.create(annex.cx, FLOOR_TOP + 0.1, annex.cz)
     return
   }
 }

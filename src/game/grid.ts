@@ -5,8 +5,9 @@
 //   W  full wall (stops blocks AND the player)
 //   .  ice floor    O  hole (block or player falling in resets the level)
 //   P  pressure plate    S  static cube    B  movable block (on ice)    @  player start (on ice)
-//   E  exit door (at most one): sealed until every plate is covered, then you finish by walking through it.
-//      Put it on the border next to a floor tile. A level with no E is finished as soon as the plates are covered.
+//   E  exit (at most one): a walkable step on the border, like #, where the exit door annex is attached OUTSIDE the
+//      level square. The door stays sealed until every plate is covered, then you finish by walking out through it.
+//      It must be on the border but not in a corner. A level with no E is finished as soon as the plates are covered.
 //   F  fillable pit: the first block that slides in is used up and fills it; after that it is plain floor
 //   N  snow patch: a sliding block that enters it stops there
 //   ^ > v <  arrow: a sliding block that enters it turns to face the arrow and keeps sliding
@@ -43,7 +44,8 @@ export interface Level {
   blocks: Pt[] // movable block start positions
   plates: Pt[]
   fans: { x: number; y: number; dir: Dir }[]
-  exit: Pt | null // the exit door, if the level has one
+  exit: Pt | null // the border step where the exit door is attached, if the level has one
+  exitSide: Dir | null // which way outside the square the exit door faces (W / E / N / S)
   start: Pt
 }
 
@@ -57,6 +59,7 @@ export function parseLevel(name: string, rows: string[]): Level {
   const plates: Pt[] = []
   const fans: Level['fans'] = []
   let exit: Pt | null = null
+  let exitSide: Dir | null = null
   let start: Pt | null = null
 
   rows.forEach((row, y) => {
@@ -76,7 +79,12 @@ export function parseLevel(name: string, rows: string[]): Level {
         if (FAN_DIR[ch]) fans.push({ x, y, dir: FAN_DIR[ch] })
         if (ch === 'E') {
           if (exit) throw new Error('more than one exit door (E)')
+          const onX = x === 0 || x === width - 1
+          const onY = y === 0 || y === rows.length - 1
+          if (!onX && !onY) throw new Error('the exit (E) must be on the border of the level')
+          if (onX && onY) throw new Error('the exit (E) cannot be in a corner')
           exit = { x, y }
+          exitSide = x === 0 ? 'W' : x === width - 1 ? 'E' : y === 0 ? 'N' : 'S'
         }
         line.push(ch as Tile)
       } else {
@@ -90,5 +98,5 @@ export function parseLevel(name: string, rows: string[]): Level {
   if (plates.length === 0) throw new Error('level has no pressure plate (P)')
   if (blocks.length < plates.length) throw new Error(`${plates.length} plates but only ${blocks.length} blocks`)
 
-  return { name, width, height: rows.length, rows: rows.slice(), tiles, blocks, plates, fans, exit, start }
+  return { name, width, height: rows.length, rows: rows.slice(), tiles, blocks, plates, fans, exit, exitSide, start }
 }

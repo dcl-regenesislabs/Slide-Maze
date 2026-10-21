@@ -1,6 +1,6 @@
 import ReactEcs, { Input, Label, UiEntity } from '@dcl/sdk/react-ecs'
 import { Color4 } from '@dcl/sdk/math'
-import { canRedo, canUndo, check, copyEditorCode, cycleMode, exitEditor, flipH, flipV, importCode, newBlank, paint, pickTool, playTest, redo, resetBlocks, resize, rotate, togglePanel, undo } from '../game/editor'
+import { canRedo, canUndo, check, copyEditorCode, cycleMode, exitEditor, flipH, flipV, growEdge, importCode, newBlank, paint, pickTool, playTest, redo, resetBlocks, resize, rotate, togglePanel, undo } from '../game/editor'
 import { editor } from '../game/session'
 import { showHint } from '../game/world'
 import { openMyLevels, saveCurrentLevel } from '../game/levelStore'
@@ -87,7 +87,7 @@ const Toolbar = () => {
   )
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(16), left: S(16) }, width: S(440), flexDirection: 'column', pointerFilter: 'none' }}>
-      <Card width="100%" height={S(148)} pad={S(8)} block justify="flex-start" align="flex-start">
+      <Card width="100%" height={S(222)} pad={S(8)} block justify="flex-start" align="flex-start">
         <UiEntity uiTransform={{ flexDirection: 'row', flexWrap: 'wrap', width: '100%', pointerFilter: 'none' }}>
           {b('ed-undo', canUndo() ? 'Undo' : 'Undo -', undo)}
           {b('ed-redo', canRedo() ? 'Redo' : 'Redo -', redo)}
@@ -98,6 +98,15 @@ const Toolbar = () => {
           {b('ed-reset', 'Reset', resetBlocks)}
           {b('ed-tools', editor.panelOpen ? 'Tools <' : 'Tools >', togglePanel)}
           {b('ed-exit', 'Exit', exitEditor)}
+        </UiEntity>
+        <UiEntity uiTransform={{ flexDirection: 'row', alignItems: 'center', width: '100%', margin: { bottom: S(2) }, pointerFilter: 'none' }}>
+          <Label value={`Size ${editor.rows[0].length} x ${editor.rows.length}`} fontSize={FS(14)} font="sans-serif" color={PAL.text} textAlign="middle-left" uiTransform={{ width: S(110), height: S(34) }} />
+          {(['N', 'S', 'W', 'E'] as const).map((e) => (
+            <UiEntity key={`g${e}`} uiTransform={{ flexDirection: 'row', margin: { right: S(6) }, pointerFilter: 'none' }}>
+              <PillButton id={`grow${e}`} label={`+${e}`} width={S(46)} height={S(32)} accent onClick={() => growEdge(e, 1)} margin={{ right: S(2) }} />
+              <PillButton id={`shrink${e}`} label={`-${e}`} width={S(40)} height={S(32)} onClick={() => growEdge(e, -1)} />
+            </UiEntity>
+          ))}
         </UiEntity>
         <Label value={editor.status} fontSize={FS(14)} font="sans-serif" color={statusColor} textAlign="middle-left" textWrap="wrap" uiTransform={{ width: '100%', height: S(46) }} />
       </Card>
@@ -135,13 +144,13 @@ const SizeRow = (props: { label: string; value: number; onMinus: () => void; onP
 const ToolsPanel = () => {
   const rows = editor.rows.length
   const cols = editor.rows[0].length
-  const cell = Math.min(S(40), Math.floor((1080 - S(560)) / rows))
+  const cell = Math.min(S(40), Math.floor((1080 - S(640)) / rows))
   const gridW = cols * (cell + 2)
   const gridH = rows * (cell + 2)
   const width = Math.max(S(390), gridW + S(40))
   const height = S(360) + gridH
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(176), left: S(16) }, width, height, pointerFilter: 'none' }}>
+    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(250), left: S(16) }, width, height, pointerFilter: 'none' }}>
       <Card width="100%" height="100%" pad={S(12)} block justify="flex-start">
         <OutlineLabel value="LEVEL TOOLS" fontSize={FS(22)} color={PAL.amber} width="100%" height={S(30)} />
         <UiEntity uiTransform={{ width: gridW, height: gridH, margin: { top: S(4), bottom: S(6) }, flexDirection: 'column', pointerFilter: 'none' }}>
