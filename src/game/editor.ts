@@ -45,7 +45,7 @@ export function resetBlocks() {
   refresh()
 }
 
-const PALETTE_ORDER = ['.', '#', 'W', 'O', 'F', 'P', 'S', 'B', '@', 'N', 'arrow', 'fan']
+const PALETTE_ORDER = ['.', '#', 'W', 'O', 'F', 'E', 'P', 'S', 'B', '@', 'N', 'arrow', 'fan']
 const paletteId = (t: EditorTool) => ('^>v<'.includes(t) ? 'arrow' : 'urdl'.includes(t) ? 'fan' : t)
 
 function editorInputSystem() {

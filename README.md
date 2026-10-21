@@ -9,7 +9,7 @@ The whole floor is ice. Walk into a block and it **slides** across the level unt
 ## How it plays
 
 - **Push a block** by walking into it and holding against it for a moment. It slides until something stops it.
-- **Cover every plate at once** to solve the level. Blocks do not stop on a plate by themselves, so the puzzle is working out what will stop them there.
+- **Cover every plate at once** to unlock the exit door, then walk through it. Blocks do not stop on a plate by themselves, so the puzzle is working out what will stop them there. The covering blocks are frozen once the door opens, and the solver also checks that you can reach the door.
 - **Levels float 12 m above the ground.** Falling into a hole, or off the edge, resets the level.
 - **Step ledges** (`#`) around the room are low enough to jump onto. You can walk along them and push blocks from that side. Blocks still stop against them.
 - You start in a **lobby**. A terminal opens the level-select menu.
@@ -25,7 +25,8 @@ Levels are small ASCII grids. The same characters appear in the code, the editor
 | `W` | Wall | Full height. Stops blocks and the player |
 | `O` | Hole | A block or the player that goes in is lost, and the level resets |
 | `F` | Fillable pit | The first block that slides in is **used up** and the pit becomes floor. After that, blocks slide across it |
-| `P` | Pressure plate | Cover all of them at the same time to win |
+| `P` | Pressure plate | Cover all of them at the same time to open the exit door |
+| `E` | Exit door | On the border, one per level. Sealed until every plate is covered, then you finish the level by **walking through it**. A level with no door finishes when the plates are covered |
 | `S` | Static cube | Immovable. Stops blocks |
 | `N` | Snow patch | A sliding block that enters it **stops** there |
 | `^ > v <` | Arrow | A sliding block that enters it **turns** to face the arrow and keeps going |
@@ -152,12 +153,11 @@ The rules in `src/game` are pure TypeScript with no SDK imports, so the same cod
 Rough order, from the current recap:
 
 1. Playtest pass in the Explorer, and fix what breaks.
-2. Exit-door rule: walk through the open door to finish a level.
-3. Saved progress and leaderboards (weekly and all-time).
-4. Editor: undo / redo, show-the-solution, fill and mirror tools.
-5. Sound, camera work, onboarding.
-6. Swap the placeholder boxes for the real 3D models.
-7. Later: community level submissions and voting.
+2. Saved progress and leaderboards (weekly and all-time).
+3. Editor: undo / redo, hints, fill and mirror tools.
+4. Sound, camera work, onboarding.
+5. Swap the placeholder boxes for the real 3D models.
+6. Later: community level submissions and voting.
 
 ## Switches to flip before launch
 

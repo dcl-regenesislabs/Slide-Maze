@@ -2,7 +2,7 @@
 // State = block positions + which region of floor the player can reach (the player only matters through what they can reach).
 
 import { DIRS, DIR_DELTA, Dir, Level, Pt } from './grid'
-import { GameState, createState, isSolved, playerCanStand, push } from './logic'
+import { GameState, canReachExit, createState, isSolved, push, reachable } from './logic'
 
 export interface Solution {
   solvable: boolean
@@ -18,26 +18,6 @@ const ids = (pts: Pt[]) =>
     .sort((a, b) => a - b)
     .join(',')
 const key = (blocks: Pt[], filled: Pt[], reach: Pt) => ids(blocks) + '/' + ids(filled) + '|' + (reach.y * 100 + reach.x)
-
-/** Flood fill from the player; returns the reachable tiles and the canonical (top-left-most) one. */
-function reachable(state: GameState, from: Pt): { set: Set<number>; canon: Pt } {
-  const w = state.level.width
-  const set = new Set<number>([from.y * w + from.x])
-  const queue: Pt[] = [from]
-  let canon = from
-  while (queue.length) {
-    const p = queue.pop() as Pt
-    if (p.y < canon.y || (p.y === canon.y && p.x < canon.x)) canon = p
-    for (const d of DIRS) {
-      const n = { x: p.x + DIR_DELTA[d].x, y: p.y + DIR_DELTA[d].y }
-      if (!set.has(n.y * w + n.x) && playerCanStand(state, n)) {
-        set.add(n.y * w + n.x)
-        queue.push(n)
-      }
-    }
-  }
-  return { set, canon }
-}
 
 export function solve(level: Level, limit = 2_000_000): Solution {
   interface Node {
@@ -56,7 +36,7 @@ export function solve(level: Level, limit = 2_000_000): Solution {
   while (frontier.length) {
     const next: Node[] = []
     for (const node of frontier) {
-      if (isSolved(node.state)) {
+      if (isSolved(node.state) && canReachExit(node.state, node.player)) {
         const steps: Solution['steps'] = []
         for (let n: Node | null = node; n && n.step; n = n.prev) steps.unshift(n.step)
         return { solvable: true, pushes: node.depth, steps, statesSearched: searched, truncated: false }

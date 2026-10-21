@@ -6,7 +6,7 @@
 // When a block comes to rest in a fan's wind lane, the fan pushes it on (and so on, a few times at most).
 // A fillable pit (F) swallows the first block that slides into it and becomes floor; a hole (O) just loses the block.
 
-import { ARROW_DIR, DIR_DELTA, Dir, FAN_DIR, Level, Pt, Tile } from './grid'
+import { ARROW_DIR, DIRS, DIR_DELTA, Dir, FAN_DIR, Level, Pt, Tile } from './grid'
 
 export interface GameState {
   level: Level
@@ -45,13 +45,13 @@ export const isOpenPit = (state: GameState, p: Pt) =>
   state.level.tiles[p.y][p.x] === 'F' && !state.filled.some((f) => samePt(f, p))
 
 /** Tiles that stop a sliding block (and the wind). */
-const solidForBlocks = (t: Tile) => t === '#' || t === 'W' || t === 'S' || FAN_DIR[t] !== undefined
+const solidForBlocks = (t: Tile) => t === '#' || t === 'W' || t === 'S' || t === 'E' || FAN_DIR[t] !== undefined
 
 /** Can the player stand on this tile? Steps (#) are fine; full walls, static cubes, fans, blocks and holes are not. */
 export function playerCanStand(state: GameState, p: Pt): boolean {
   if (!inBounds(state.level, p)) return false
   const t = state.level.tiles[p.y][p.x]
-  if (t === 'W' || t === 'S' || t === 'O' || FAN_DIR[t] !== undefined) return false
+  if (t === 'W' || t === 'S' || t === 'O' || t === 'E' || FAN_DIR[t] !== undefined) return false
   if (isOpenPit(state, p)) return false
   return blockAt(state, p) === -1
 }
@@ -119,6 +119,34 @@ export function push(state: GameState, index: number, dir: Dir): PushResult {
   }
   const blocks = state.blocks.map((b, i) => (i === index ? cur : b))
   return { moved: true, path, fell, consumed: false, state: { level, blocks, filled: state.filled, moves: state.moves + 1 } }
+}
+
+/** Every tile the player can walk to from `from`, as `y * width + x` ids, plus the top-left-most one (a stable label). */
+export function reachable(state: GameState, from: Pt): { set: Set<number>; canon: Pt } {
+  const w = state.level.width
+  const set = new Set<number>([from.y * w + from.x])
+  const queue: Pt[] = [from]
+  let canon = from
+  while (queue.length) {
+    const p = queue.pop() as Pt
+    if (p.y < canon.y || (p.y === canon.y && p.x < canon.x)) canon = p
+    for (const d of DIRS) {
+      const n = { x: p.x + DIR_DELTA[d].x, y: p.y + DIR_DELTA[d].y }
+      if (!set.has(n.y * w + n.x) && playerCanStand(state, n)) {
+        set.add(n.y * w + n.x)
+        queue.push(n)
+      }
+    }
+  }
+  return { set, canon }
+}
+
+/** Can the player walk up to the exit door from where they stand? True when the level has no door. */
+export function canReachExit(state: GameState, from: Pt): boolean {
+  const exit = state.level.exit
+  if (!exit) return true
+  const { set } = reachable(state, from)
+  return DIRS.some((d) => set.has((exit.y + DIR_DELTA[d].y) * state.level.width + exit.x + DIR_DELTA[d].x))
 }
 
 export function isPlateCovered(state: GameState, plate: Pt): boolean {

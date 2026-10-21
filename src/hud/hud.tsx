@@ -329,11 +329,21 @@ const LevelMenu = () => {
   )
 }
 
+/** Shown between covering the last plate and walking through the exit door. */
+const ExitBanner = () => (
+  <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(84), left: 0 }, width: '100%', height: S(52), justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
+    <Card width={S(420)} height={S(48)} rim={PAL.good}>
+      <OutlineLabel value="Exit unlocked! Head for the door" fontSize={FS(20)} color={PAL.good} width="100%" height={S(32)} />
+    </Card>
+  </UiEntity>
+)
+
 export const Hud = () => {
   const showComplete = session.solved && Date.now() - session.finishedAt > COMPLETE_DELAY_MS
   return (
     <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
       {!session.inLobby && <TopBar />}
+      {session.unlocked && session.hasDoor && !session.solved && !editor.open && <ExitBanner />}
       <SideButtons />
       {session.codeOpen && <CodePanel />}
       {session.menuOpen && <LevelMenu />}

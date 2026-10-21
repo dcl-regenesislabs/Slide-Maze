@@ -1,13 +1,14 @@
 import { Level, parseLevel } from './grid'
 import { decodeLevelCode, encodeLevelCode } from './levelCode'
 
+// Every level has one exit door (E) on the border: it opens when all plates are covered.
 // Accepted levels live here as readable ASCII (see grid.ts for the legend). The level code is only a transport format.
 // Every level must pass `node tools/run.mjs tools/check.ts` (solvable + code round-trip) before it is committed.
 export const LEVELS: Level[] = [
   // Teaches the two ideas: a push slides until something stops it, and a plate counts when a block rests on it.
   // Solution (2 pushes): block east -> it stops at the east wall; block north -> it stops on the plate.
   parseLevel('First Slide', [
-    '#######',
+    '####E##',
     '#....P#',
     '#.....#',
     '#..B..#',
@@ -17,7 +18,7 @@ export const LEVELS: Level[] = [
   ]),
   // Static cubes are stoppers: the plate sits next to one, so a block sliding along that row halts on it.
   parseLevel('Stoppers', [
-    '#######',
+    '#####E#',
     '#.....#',
     '#.....#',
     '#..PS.#',
@@ -27,7 +28,7 @@ export const LEVELS: Level[] = [
   ]),
   // Holes are traps: a block that slides into one is lost and the level resets. Plan the stop before the push.
   parseLevel('Mind the Gap', [
-    '#######',
+    '#E#####',
     '#.OOP.#',
     '#.....#',
     '#O.B..#',
@@ -42,7 +43,7 @@ export const LEVELS: Level[] = [
     '#O....#',
     '#P..@.#',
     '#S..S.#',
-    '#.B...#',
+    'E.B...#',
     '#######'
   ]),
   // Three blocks, three plates, one hole: blocks get in each other's way.
@@ -53,7 +54,7 @@ export const LEVELS: Level[] = [
     '#O.S.B#',
     '#..S.B#',
     '#....P#',
-    '#######'
+    '####E##'
   ]),
   // Levels 6-10 are solver-verified drafts from tools/gen.ts: difficulty is a guess until they are playtested.
   parseLevel('Corner Pocket', [
@@ -61,7 +62,7 @@ export const LEVELS: Level[] = [
     '#P...S#',
     '#S..@.#',
     '#....P#',
-    '#..BO.#',
+    'E..BO.#',
     '#S...B#',
     '#######'
   ]),
@@ -71,7 +72,7 @@ export const LEVELS: Level[] = [
     '#....B#',
     '#OS..P#',
     '#....P#',
-    '#...O.#',
+    'E...O.#',
     '#######'
   ]),
   parseLevel('Plate Cluster', [
@@ -80,7 +81,7 @@ export const LEVELS: Level[] = [
     '#..SB.#',
     '#..B@B#',
     '#S.S..#',
-    '#..O..#',
+    'E..O..#',
     '#######'
   ]),
   parseLevel('Hole Maze', [
@@ -88,13 +89,13 @@ export const LEVELS: Level[] = [
     '#..B.B#',
     '#@S.P.#',
     '#.O...#',
-    '#BOPO.#',
+    '#BOPO.E',
     '#..S.P#',
     '#######'
   ]),
   parseLevel('The Big Room', [
     '#########',
-    '#.O.O...#',
+    '#.O.O...E',
     '#B......#',
     '#....S..#',
     '#S.SP...#',
@@ -105,7 +106,7 @@ export const LEVELS: Level[] = [
   ]),
   // Levels 11-13 introduce the new tiles (see the legend in grid.ts): snow stops a block, arrows turn it, a fan blows it.
   parseLevel('Soft Landing', [
-    '#######',
+    '#E#####',
     '#....O#',
     '#N.N.P#',
     '#.PB.N#',
@@ -119,11 +120,11 @@ export const LEVELS: Level[] = [
     '#vS>.S#',
     '#B...P#',
     '#.^.O.#',
-    '#B....#',
+    '#B....E',
     '#######'
   ]),
   parseLevel('Tailwind', [
-    '#######',
+    '####E##',
     '#....P#',
     '#.SOd.#',
     '#P....#',
@@ -133,7 +134,7 @@ export const LEVELS: Level[] = [
   ]),
   // Levels 14-15 introduce the fillable pit (F): the first block that slides in is used up and the pit becomes floor.
   parseLevel('Fill the Gap', [
-    '#######',
+    '#E#####',
     '#.S..P#',
     '#.....#',
     '#...@S#',
@@ -147,7 +148,7 @@ export const LEVELS: Level[] = [
     '#....P#',
     '#..SP@#',
     '#.BS..#',
-    '#..O..#',
+    'E..O..#',
     '#######'
   ])
 ]

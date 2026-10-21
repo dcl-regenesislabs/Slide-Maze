@@ -5,6 +5,8 @@
 //   W  full wall (stops blocks AND the player)
 //   .  ice floor    O  hole (block or player falling in resets the level)
 //   P  pressure plate    S  static cube    B  movable block (on ice)    @  player start (on ice)
+//   E  exit door (at most one): sealed until every plate is covered, then you finish by walking through it.
+//      Put it on the border next to a floor tile. A level with no E is finished as soon as the plates are covered.
 //   F  fillable pit: the first block that slides in is used up and fills it; after that it is plain floor
 //   N  snow patch: a sliding block that enters it stops there
 //   ^ > v <  arrow: a sliding block that enters it turns to face the arrow and keeps sliding
@@ -27,7 +29,7 @@ export const DIR_DELTA: Record<Dir, Pt> = {
 }
 
 // Static tiles only. Blocks and the start are separate so a tile is always one of these.
-export type Tile = '#' | 'W' | '.' | 'O' | 'P' | 'S' | 'N' | 'F' | '^' | '>' | 'v' | '<' | 'u' | 'r' | 'd' | 'l'
+export type Tile = '#' | 'W' | '.' | 'O' | 'P' | 'S' | 'N' | 'F' | 'E' | '^' | '>' | 'v' | '<' | 'u' | 'r' | 'd' | 'l'
 
 export const ARROW_DIR: Record<string, Dir> = { '^': 'N', '>': 'E', v: 'S', '<': 'W' }
 export const FAN_DIR: Record<string, Dir> = { u: 'N', r: 'E', d: 'S', l: 'W' }
@@ -41,10 +43,11 @@ export interface Level {
   blocks: Pt[] // movable block start positions
   plates: Pt[]
   fans: { x: number; y: number; dir: Dir }[]
+  exit: Pt | null // the exit door, if the level has one
   start: Pt
 }
 
-const TILE_CHARS = '#W.OPSNF^>v<urdl'
+const TILE_CHARS = '#W.OPSNFE^>v<urdl'
 
 export function parseLevel(name: string, rows: string[]): Level {
   if (rows.length < 3) throw new Error('level needs at least 3 rows')
@@ -53,6 +56,7 @@ export function parseLevel(name: string, rows: string[]): Level {
   const blocks: Pt[] = []
   const plates: Pt[] = []
   const fans: Level['fans'] = []
+  let exit: Pt | null = null
   let start: Pt | null = null
 
   rows.forEach((row, y) => {
@@ -70,6 +74,10 @@ export function parseLevel(name: string, rows: string[]): Level {
       } else if (TILE_CHARS.includes(ch)) {
         if (ch === 'P') plates.push({ x, y })
         if (FAN_DIR[ch]) fans.push({ x, y, dir: FAN_DIR[ch] })
+        if (ch === 'E') {
+          if (exit) throw new Error('more than one exit door (E)')
+          exit = { x, y }
+        }
         line.push(ch as Tile)
       } else {
         throw new Error(`unknown tile '${ch}' at ${x},${y}`)
@@ -82,5 +90,5 @@ export function parseLevel(name: string, rows: string[]): Level {
   if (plates.length === 0) throw new Error('level has no pressure plate (P)')
   if (blocks.length < plates.length) throw new Error(`${plates.length} plates but only ${blocks.length} blocks`)
 
-  return { name, width, height: rows.length, rows: rows.slice(), tiles, blocks, plates, fans, start }
+  return { name, width, height: rows.length, rows: rows.slice(), tiles, blocks, plates, fans, exit, start }
 }

@@ -6,7 +6,7 @@ import { Color3, Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { copyToClipboard, movePlayerTo } from '~system/RestrictedActions'
 import { FX_COLORS, clearFx, confetti, dust, holeBurst, plateOn, setupFx, stopBurst, trail, windStreak } from './fx'
 import { buildLobby, LOBBY_SPAWN } from './lobby'
-import { ARROW_DIR, DIR_DELTA, Dir, FAN_DIR, Level, Pt } from './grid'
+import { ARROW_DIR, DIRS, DIR_DELTA, Dir, FAN_DIR, Level, Pt } from './grid'
 import { LEVELS, levelCode } from './levels'
 import { GameState, createState, isPlateCovered, isSolved, push } from './logic'
 import { editor, progress, session } from './session'
@@ -46,6 +46,8 @@ const ARROW = Color4.create(0.2, 0.9, 1, 1)
 const FAN_BODY = Color4.create(0.2, 0.25, 0.32, 1)
 const FAN_BLADE = Color4.create(0.85, 0.95, 1, 1)
 const FX_AMBER = FX_COLORS.amber
+const DOOR_LEAF = Color4.create(0.28, 0.36, 0.5, 1)
+const DOOR_RUNE = Color4.create(0.3, 0.9, 1, 1)
 
 interface Slide {
   index: number
@@ -70,6 +72,7 @@ interface Runtime {
   blocks: Entity[]
   plates: { entity: Entity; pt: Pt; on: boolean }[]
   fans: { x: number; z: number; fx: number; fz: number; len: number }[] // wind lanes, for the wind streaks
+  door: { parts: Entity[]; baseY: number[]; open: number; target: boolean; cx: number; cz: number } | null // the exit door
   pits: Record<string, Entity[]> // lip pieces of each open fillable pit, by 'x,y'
   fills: { entity: Entity; t: number; toY: number }[] // floor tiles rising into filled pits
   slide: Slide | null
@@ -195,6 +198,7 @@ function buildLevel(level: Level, index: number) {
     blocks: [],
     plates: [],
     fans: [],
+    door: null,
     pits: {},
     fills: [],
     slide: null,
@@ -236,6 +240,31 @@ function buildLevel(level: Level, index: number) {
           len++
         }
         r.fans.push({ x: c.x, z: c.z, fx, fz, len })
+      } else if (t === 'E') {
+        // exit door: a gateway on the ice with two leaves. The leaves sink into the floor once every plate is covered.
+        const inward = DIRS.find((d) => {
+          const nx = x + DIR_DELTA[d].x
+          const ny = y + DIR_DELTA[d].y
+          return nx >= 0 && ny >= 0 && nx < level.width && ny < level.height && !['#', 'W', 'E'].includes(level.tiles[ny][nx])
+        })
+        const spansX = inward === 'N' || inward === 'S' || inward === undefined // the door faces along z, so it spans x
+        const c = tileCentre(p, level, 0)
+        box(r, tileCentre(p, level, FLOOR_TOP - FLOOR_THICK / 2), Vector3.create(TILE, FLOOR_THICK, TILE), (x + y) % 2 === 0 ? ICE_A : ICE_B, true, { metallic: 0.1, roughness: 0.12 })
+        const at = (lat: number, y2: number) => Vector3.create(c.x + (spansX ? lat : 0), y2, c.z + (spansX ? 0 : lat))
+        const sz = (lat: number, h: number, thick: number) => (spansX ? Vector3.create(lat, h, thick) : Vector3.create(thick, h, lat))
+        for (const side of [-1, 1]) box(r, at(side * (TILE / 2 - 0.3), FLOOR_TOP + 1.9), sz(0.6, 3.8, 0.7), WALL, true) // posts
+        box(r, at(0, FLOOR_TOP + 3.5), sz(TILE, 0.6, 0.7), WALL, true) // lintel
+        const parts: Entity[] = []
+        const baseY: number[] = []
+        for (const side of [-1, 1]) {
+          const leafY = FLOOR_TOP + 1.6
+          parts.push(box(r, at(side * (TILE / 4 - 0.02), leafY), sz(TILE / 2 - 0.3, 3.2, 0.5), DOOR_LEAF, true, { roughness: 0.6 }))
+          baseY.push(leafY)
+          // a dim rune bar across each leaf; it is what lights up on the real art
+          parts.push(box(r, at(side * (TILE / 4 - 0.02), leafY + 0.4), sz(TILE / 2 - 0.9, 0.14, 0.56), DOOR_RUNE, false, { glow: 0.25, roughness: 0.4 }))
+          baseY.push(leafY + 0.4)
+        }
+        r.door = { parts, baseY, open: 0, target: false, cx: c.x, cz: c.z }
       } else if (t === 'O') {
         // no floor at all: the level floats, so a block or the avatar that goes in really drops to the ground below
       } else if (t === 'F') {
@@ -293,6 +322,8 @@ function buildLevel(level: Level, index: number) {
   if (editor.open) buildPicks(r)
 
   session.inLobby = false
+  session.unlocked = false
+  session.hasDoor = level.exit !== null
   session.levelIndex = index
   session.name = level.name
   session.code = levelCode(level)
@@ -323,7 +354,7 @@ function buildPicks(r: Runtime) {
       const t = level.tiles[y][x]
       let top = FLOOR_TOP + 0.1
       if (t === '#') top = FLOOR_TOP + STEP_HEIGHT
-      else if (t === 'W') top = ELEV + WALL_HEIGHT
+      else if (t === 'W' || t === 'E') top = ELEV + WALL_HEIGHT
       else if (t === 'S' || blockCells.has(`${x},${y}`)) top = FLOOR_TOP + BLOCK_SIZE
       else if (FAN_DIR[t]) top = FLOOR_TOP + 1.6
       const h = top - ELEV
@@ -561,20 +592,50 @@ function finishSlide(after: GameState, bounce: boolean) {
   rt.cooldown = PUSH_COOLDOWN
   if (bounce) rt.bounce = { index: s.index, t: 0 }
   refreshPlates(true)
-  if (isSolved(rt.state) && !session.solved) {
-    session.solved = true
-    session.finishedAt = Date.now()
-    const ms = session.finishedAt - session.startedAt
-    if (session.levelIndex >= 0) {
-      const pr = progress[session.levelIndex]
-      pr.done = true
-      if (!pr.bestMoves || session.moves < pr.bestMoves) pr.bestMoves = session.moves
-      if (!pr.bestTimeMs || ms < pr.bestTimeMs) pr.bestTimeMs = ms
+  if (isSolved(rt.state) && !session.unlocked && !session.solved) {
+    session.unlocked = true
+    if (rt.door) {
+      // every plate is covered: the door opens and the player walks through it to finish
+      rt.door.target = true
+      plateOn(rt.door.cx, FLOOR_TOP, rt.door.cz)
+    } else {
+      completeLevel()
     }
-    for (const p of rt.plates) {
-      const c = Transform.get(p.entity).position
-      confetti(c.x, FLOOR_TOP, c.z)
-    }
+  }
+}
+
+/** The level is finished: record the result and celebrate. */
+function completeLevel() {
+  if (!rt || session.solved) return
+  session.solved = true
+  session.finishedAt = Date.now()
+  const ms = session.finishedAt - session.startedAt
+  if (session.levelIndex >= 0) {
+    const pr = progress[session.levelIndex]
+    pr.done = true
+    if (!pr.bestMoves || session.moves < pr.bestMoves) pr.bestMoves = session.moves
+    if (!pr.bestTimeMs || ms < pr.bestTimeMs) pr.bestTimeMs = ms
+  }
+  for (const p of rt.plates) {
+    const c = Transform.get(p.entity).position
+    confetti(c.x, FLOOR_TOP, c.z)
+  }
+  if (rt.door) confetti(rt.door.cx, FLOOR_TOP, rt.door.cz)
+}
+
+/** Animates the door and finishes the level when the player walks into the open doorway. */
+function doorSystem(dt: number) {
+  const d = rt?.door
+  if (!rt || !d) return
+  if (d.target && d.open < 1) d.open = Math.min(1, d.open + dt / 0.9)
+  const k = 1 - (1 - d.open) * (1 - d.open) // ease-out
+  d.parts.forEach((e, i) => {
+    const tr = Transform.getMutable(e)
+    tr.position = Vector3.create(tr.position.x, d.baseY[i] - 3.6 * k, tr.position.z)
+  })
+  if (d.open >= 1 && session.unlocked && !session.solved && Transform.has(engine.PlayerEntity)) {
+    const p = Transform.get(engine.PlayerEntity).position
+    if (Math.abs(p.x - d.cx) < TILE / 2 && Math.abs(p.z - d.cz) < TILE / 2 && p.y > ELEV - 1 && p.y < ELEV + 5) completeLevel()
   }
 }
 
@@ -592,7 +653,7 @@ function pushSystem(dt: number) {
   pushEffort.lastEvent = ''
   if (!rt) return
   if (rt.cooldown > 0) rt.cooldown -= dt
-  if (rt.slide || rt.cooldown > 0 || session.solved || rt.resetIn > 0) {
+  if (rt.slide || rt.cooldown > 0 || session.solved || session.unlocked || rt.resetIn > 0) {
     if (charge) endCharge('cancel')
     return
   }
@@ -681,4 +742,5 @@ export function setupWorld() {
   engine.addSystem(slideSystem, 8, 'sm-slide')
   engine.addSystem(playerFallSystem, 7, 'sm-player-fall')
   engine.addSystem(fanSystem, 6, 'sm-fan')
+  engine.addSystem(doorSystem, 6, 'sm-door')
 }

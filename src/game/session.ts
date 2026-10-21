@@ -11,7 +11,9 @@ export interface Session {
   moves: number
   startedAt: number // Date.now() of the first push, 0 = not started yet
   finishedAt: number // Date.now() when the last plate was covered, 0 = not solved
-  solved: boolean
+  unlocked: boolean // every plate is covered: the exit door (if any) is open and the blocks are frozen
+  hasDoor: boolean // the loaded level has an exit door
+  solved: boolean // the level is finished (a level with a door finishes when the player walks through it)
   codeOpen: boolean
   menuOpen: boolean // the level-select menu
   copiedAt: number // Date.now() of the last successful copy, for the "Copied!" flash
@@ -25,6 +27,8 @@ export const session: Session = {
   moves: 0,
   startedAt: 0,
   finishedAt: 0,
+  unlocked: false,
+  hasDoor: false,
   solved: false,
   codeOpen: false,
   menuOpen: false,
@@ -49,7 +53,7 @@ export const isUnlocked = (i: number) => DEV_UNLOCK_ALL || i === 0 || progress[i
 /** Dev switch. Later this becomes a wallet allowlist so players never see the editor. */
 export const EDITOR_ENABLED = true
 
-export type EditorTool = '.' | '#' | 'W' | 'O' | 'P' | 'S' | 'B' | '@' | 'N' | '^' | '>' | 'v' | '<' | 'u' | 'r' | 'd' | 'l'
+export type EditorTool = '.' | '#' | 'W' | 'O' | 'P' | 'S' | 'B' | '@' | 'N' | 'F' | 'E' | '^' | '>' | 'v' | '<' | 'u' | 'r' | 'd' | 'l'
 
 export interface EditorState {
   open: boolean

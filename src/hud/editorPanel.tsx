@@ -14,6 +14,7 @@ const TOOLS: { tool: string; name: string; color: Color4 }[] = [
   { tool: 'W', name: 'Wall', color: hex('#2b3854') },
   { tool: 'O', name: 'Hole', color: hex('#04070f') },
   { tool: 'F', name: 'Pit', color: hex('#ffb13b') },
+  { tool: 'E', name: 'Exit', color: hex('#33e0ff') },
   { tool: 'P', name: 'Plate', color: hex('#f2bf33') },
   { tool: 'S', name: 'Cube', color: hex('#4d5b6b') },
   { tool: 'B', name: 'Block', color: hex('#ff8c26') },
@@ -26,7 +27,7 @@ const ARROW_CHARS = '^>v<'
 const FAN_CHARS = 'urdl'
 const colorOf = (ch: string) =>
   ARROW_CHARS.includes(ch) ? hex('#33e0ff') : FAN_CHARS.includes(ch) ? hex('#8a9bb0') : (TOOLS.find((t) => t.tool === ch)?.color ?? PAL.panel)
-const glyphOn = (ch: string) => (ch === '.' || ch === 'P' || ch === 'B' || ch === '@' || ch === 'N' || ch === 'F' || ARROW_CHARS.includes(ch) ? hex('#0b1830') : PAL.text)
+const glyphOn = (ch: string) => (ch === '.' || ch === 'P' || ch === 'B' || ch === '@' || ch === 'N' || ch === 'F' || ch === 'E' || ARROW_CHARS.includes(ch) ? hex('#0b1830') : PAL.text)
 /** What a cell shows: the tile character, with a short label for the ones that are not self-explanatory. */
 const FAN_GLYPH: Record<string, string> = { u: 'F^', r: 'F>', d: 'Fv', l: 'F<' }
 const cellGlyph = (ch: string) => (ch === 'N' ? '*' : ch === 'F' ? 'o' : (FAN_GLYPH[ch] ?? ch))

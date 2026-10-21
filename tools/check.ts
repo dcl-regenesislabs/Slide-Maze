@@ -5,7 +5,7 @@
 import { parseLevel } from '../src/game/grid'
 import { decodeLevelCode, encodeLevelCode } from '../src/game/levelCode'
 import { LEVELS, levelCode } from '../src/game/levels'
-import { createState, isSolved, playerCanStand, push } from '../src/game/logic'
+import { canReachExit, createState, isSolved, playerCanStand, push } from '../src/game/logic'
 import { solve } from './solver'
 
 declare const process: { exitCode?: number }
@@ -109,6 +109,28 @@ console.log('fillable pit')
   ok(!solve(short).solvable, 'in a sealed corridor with one block, the pit eats it and the plate can never be covered')
 }
 
+console.log('exit door')
+{
+  ok(parseLevel('t', ['WEWWWW', 'W.P..W', 'W.B..W', 'W@...W', 'WWWWWW']).exit?.x === 1, 'a level can have an exit door (E)')
+  ok(throws(() => parseLevel('t', ['WEEWWW', 'W.P..W', 'W.B..W', 'W@...W', 'WWWWWW'])), 'two exit doors are rejected')
+  ok(parseLevel('t', ['WWWWW', 'W@BPW', 'WWWWW']).exit === null, 'a level with no door has exit = null')
+
+  // The block covers the plate in front of the door and seals it, so the level cannot be finished.
+  const sealed = ['WEWWWW', 'WP...W', 'W.B..W', 'W@...W', 'WWWWWW']
+  ok(solve(parseLevel('t', sealed.map((r) => r.replace('E', 'W')))).pushes === 2, 'sanity: without a door the same level is solved in 2 pushes')
+  ok(!solve(parseLevel('t', sealed)).solvable, 'the plate sits in front of the door, so covering it blocks the way out')
+
+  // Plate moved aside: the door stays reachable.
+  const open = parseLevel('t', ['WEWWWW', 'W.P..W', 'W.B..W', 'W@...W', 'WWWWWW'])
+  const sol = solve(open)
+  ok(sol.solvable && sol.pushes === 1, 'with the plate beside the door the level is solvable')
+  const done = push(createState(open), 0, 'N')
+  ok(isSolved(done.state) && canReachExit(done.state, open.start), 'after covering the plate the player can reach the door')
+  ok(!playerCanStand(createState(open), { x: 1, y: 0 }), 'the door tile itself is not standable (it is where you exit)')
+  const toDoor = push(createState(parseLevel('t', ['WEWWW', 'W.P.W', 'WB@.W', 'WWWWW'])), 0, 'N')
+  ok(toDoor.moved && toDoor.state.blocks[0].x === 1 && toDoor.state.blocks[0].y === 1, 'a block sliding at the door stops in front of it')
+}
+
 console.log('level code')
 {
   const rows = ['#######', '#....P#', '#.....#', '#..B..#', '#.....#', '#@....#', '#######']
@@ -139,6 +161,7 @@ LEVELS.forEach((level, i) => {
   const plain = (re: RegExp, repl: string) => solve(parseLevel('p', rows.map((r) => r.replace(re, repl))))
   const differs = (p: ReturnType<typeof solve>) => !p.solvable || p.pushes !== sol.pushes
   const tag = `level ${i + 1} "${level.name}"`
+  ok(level.exit !== null, `${tag} has an exit door`)
   if (/[urdl]/.test(rows.join(''))) ok(differs(plain(/[urdl]/g, 'S')), `${tag}: the fan's wind matters (not just a solid block)`)
   if (/[>v<^]/.test(rows.join(''))) ok(differs(plain(/[>v<^]/g, '.')), `${tag}: the arrows matter`)
   if (rows.join('').includes('N')) ok(differs(plain(/N/g, '.')), `${tag}: the snow matters`)
