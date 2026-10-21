@@ -13,6 +13,8 @@ The whole floor is ice. Walk into a block and it **slides** across the level unt
 - **Levels float 12 m above the ground.** Falling into a hole, or off the edge, resets the level.
 - **Step ledges** (`#`) around the room are low enough to jump onto. You can walk along them and push blocks from that side. Blocks still stop against them.
 - You start in a **lobby**. A terminal opens the level-select menu.
+- **Progress is saved per wallet** on the server: completed levels and your best moves and time. The server checks reported results (a real level, at least the optimal number of pushes, not faster than a push physically takes).
+- The **Hint** button solves the level from where it stands and marks the next push.
 
 ## Tiles
 
@@ -153,7 +155,7 @@ The rules in `src/game` are pure TypeScript with no SDK imports, so the same cod
 Rough order, from the current recap:
 
 1. Playtest pass in the Explorer, and fix what breaks.
-2. Saved progress and leaderboards (weekly and all-time).
+2. Leaderboards (weekly and all-time). Needs a decision on what is ranked.
 3. Editor: undo / redo, hints, fill and mirror tools.
 4. Sound, camera work, onboarding.
 5. Swap the placeholder boxes for the real 3D models.

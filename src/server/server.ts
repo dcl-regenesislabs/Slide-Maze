@@ -4,6 +4,8 @@
 import { Storage } from '@dcl/sdk/server'
 import { parseLevel } from '../game/grid'
 import { decodeLevelCode } from '../game/levelCode'
+import { LEVELS } from '../game/levels'
+import { solve } from '../game/solver'
 import { MAX_LEVEL_SIZE, MAX_NAME_LENGTH, MAX_SAVED_LEVELS, room } from '../shared/messages'
 
 interface SavedLevel {
@@ -14,6 +16,25 @@ interface SavedLevel {
 }
 
 const KEY = 'levels'
+const PROGRESS_KEY = 'progress'
+
+type Progress = Record<string, { m: number; t: number }>
+
+const minPushes: number[] = [] // fewest possible pushes per level, from the solver (computed once, on first use)
+const fewestPushes = (i: number) => (minPushes[i] ??= solve(LEVELS[i]).pushes)
+// A push takes at least the wind-up (0.6 s) before the block moves, so a result faster than this cannot be real.
+const MIN_MS_PER_PUSH = 600
+
+async function loadProgress(address: string): Promise<Progress> {
+  const raw = await Storage.player.get<string>(address, PROGRESS_KEY)
+  if (!raw) return {}
+  try {
+    const p = JSON.parse(raw)
+    return p && typeof p === 'object' ? p : {}
+  } catch {
+    return {}
+  }
+}
 
 async function loadLevels(address: string): Promise<SavedLevel[]> {
   const raw = await Storage.player.get<string>(address, KEY)
@@ -41,6 +62,31 @@ function reply(address: string, ok: boolean, message: string) {
 
 export function initServer() {
   console.log('[SERVER] Slide Maze server up')
+
+  room.onMessage('requestProgress', async (_data, context) => {
+    if (!context) return
+    room.send('progressData', { json: JSON.stringify(await loadProgress(context.from)) }, { to: [context.from] })
+  })
+
+  // Clients report their own results, so check what can be checked: a real level, at least the optimal number of
+  // pushes, and not faster than the wind-up allows. This stops casual cheating, not a determined one.
+  room.onMessage('reportComplete', async (data, context) => {
+    if (!context) return
+    const address = context.from
+    const i = data.level
+    if (!Number.isInteger(i) || i < 0 || i >= LEVELS.length) return
+    if (data.moves < fewestPushes(i) || data.timeMs < data.moves * MIN_MS_PER_PUSH) {
+      console.log(`[SERVER] rejected result from ${address} for level ${i}: ${data.moves} moves in ${data.timeMs} ms`)
+      return
+    }
+    const progress = await loadProgress(address)
+    const old = progress[String(i)]
+    progress[String(i)] = { m: old ? Math.min(old.m, data.moves) : data.moves, t: old ? Math.min(old.t, data.timeMs) : data.timeMs }
+    if (!(await Storage.player.set(address, PROGRESS_KEY, JSON.stringify(progress)))) {
+      console.log(`[SERVER] could not save progress for ${address}`)
+    }
+    room.send('progressData', { json: JSON.stringify(progress) }, { to: [address] })
+  })
 
   room.onMessage('requestLevels', async (_data, context) => {
     if (!context) return

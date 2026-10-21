@@ -10,10 +10,13 @@ export const Messages = {
   saveLevel: Schemas.Map({ name: Schemas.String, code: Schemas.String }),
   deleteLevel: Schemas.Map({ id: Schemas.String }),
   getLevel: Schemas.Map({ id: Schemas.String }),
+  requestProgress: Schemas.Map({ v: Schemas.Int }),
+  reportComplete: Schemas.Map({ level: Schemas.Int, moves: Schemas.Int, timeMs: Schemas.Int }),
   // server -> client (each message must stay well under 13 KB, so the list carries names only and codes come one by one)
   levelList: Schemas.Map({ json: Schemas.String }),
   levelData: Schemas.Map({ id: Schemas.String, name: Schemas.String, code: Schemas.String }),
-  saveResult: Schemas.Map({ ok: Schemas.Boolean, message: Schemas.String })
+  saveResult: Schemas.Map({ ok: Schemas.Boolean, message: Schemas.String }),
+  progressData: Schemas.Map({ json: Schemas.String }) // { "<level index>": { m: best moves, t: best time ms } }
 }
 
 export const room = registerMessages(Messages)

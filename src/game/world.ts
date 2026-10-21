@@ -669,6 +669,10 @@ function finishSlide(after: GameState, bounce: boolean) {
   }
 }
 
+/** Set by levelStore so the world can report a finished level to the server without importing it. */
+let onComplete: ((index: number, moves: number, timeMs: number) => void) | null = null
+export const setCompleteHandler = (fn: (index: number, moves: number, timeMs: number) => void) => (onComplete = fn)
+
 /** The level is finished: record the result and celebrate. */
 function completeLevel() {
   if (!rt || session.solved) return
@@ -680,6 +684,7 @@ function completeLevel() {
     pr.done = true
     if (!pr.bestMoves || session.moves < pr.bestMoves) pr.bestMoves = session.moves
     if (!pr.bestTimeMs || ms < pr.bestTimeMs) pr.bestTimeMs = ms
+    onComplete?.(session.levelIndex, session.moves, ms)
   }
   for (const p of rt.plates) {
     const c = Transform.get(p.entity).position
