@@ -1,15 +1,19 @@
 // Level generator: random layouts for a difficulty profile, each checked by the solver.
-//   node tools/run.mjs tools/gen.ts <blocks> <statics> <holes> <minPushes> <maxPushes> [size=7] [count=6] [seed=1] [snow=0] [arrows=0] [fans=0] [pits=0]
+//   node tools/run.mjs tools/gen.ts <blocks> <statics> <holes> <minPushes> <maxPushes> [size=7] [count=6] [seed=1] [snow=0] [arrows=0] [fans=0] [pits=0] [easy=0]
+//   easy=1 keeps only levels solvable WITHOUT standing on a border step (#), where the pit is still needed and every
+//   standing spot has open floor on at least two sides (no pockets). For introductory levels.
 //   <blocks> is the number of plates; each fillable pit adds one extra block so the level can still be won.
 // Prints the best candidates (most pushes first). A human still picks the ones that look and feel good.
 
 import { parseLevel } from '../src/game/grid'
 import { encodeLevelCode } from '../src/game/levelCode'
+import { DIR_DELTA } from '../src/game/grid'
+import { blockAt, createState, playerCanStand, push } from '../src/game/logic'
 import { solve } from './solver'
 
 declare const process: { argv: string[] }
 
-const [blocks, statics, holes, minP, maxP, size = 7, count = 6, seed = 1, snow = 0, arrows = 0, fans = 0, pits = 0] = process.argv.slice(2).map(Number)
+const [blocks, statics, holes, minP, maxP, size = 7, count = 6, seed = 1, snow = 0, arrows = 0, fans = 0, pits = 0, easy = 0] = process.argv.slice(2).map(Number)
 if ([blocks, statics, holes, minP, maxP].some((n) => Number.isNaN(n))) {
   console.log('usage: gen.ts <blocks> <statics> <holes> <minPushes> <maxPushes> [size=7] [count=6] [seed=1] [snow] [arrows] [fans]')
 } else {
@@ -61,12 +65,43 @@ if ([blocks, statics, holes, minP, maxP].some((n) => Number.isNaN(n))) {
       const sol = solve(parseLevel('gen', rows), 200_000)
       if (sol.solvable && sol.pushes >= minP && sol.pushes <= maxP) {
         // when the profile uses special tiles, keep only levels where they change the answer (not decoration)
+        // a pit must be needed: if it were a deadly hole instead, the level must be unsolvable or need more pushes
+        if (pits > 0) {
+          const asHole = solve(parseLevel('gen', rows.map((r) => r.replace(/F/g, 'O'))), 200_000)
+          if (asHole.solvable && asHole.pushes <= sol.pushes) continue
+        }
         if (snow + arrows + fans + pits > 0) {
           // a fan is solid, so its stand-in is a static cube: that isolates what the WIND adds
           const plain = solve(parseLevel('gen', rows.map((r) => r.replace(/[NF^>v<]/g, '.').replace(/[urdl]/g, 'S'))), 200_000)
           if (plain.solvable && plain.pushes === sol.pushes) continue
         }
-        found.push({ pushes: sol.pushes, rows })
+        let pushes = sol.pushes
+        if (easy) {
+          // the same level with the border steps turned into walls: nothing may need them
+          const lf = parseLevel('gen', rows.map((r) => r.replace(/#/g, 'W')))
+          const s2 = solve(lf, 200_000)
+          if (!s2.solvable || s2.pushes > maxP || s2.pushes < minP) continue
+          if (pits > 0) {
+            const hole = solve(parseLevel('gen', rows.map((r) => r.replace(/#/g, 'W').replace(/F/g, 'O'))), 200_000)
+            if (hole.solvable && hole.pushes <= s2.pushes) continue
+          }
+          // every standing spot needs open floor on at least two sides
+          let st = createState(lf)
+          let open = true
+          for (const step of s2.steps) {
+            const d = DIR_DELTA[step.dir]
+            const stand = { x: step.block.x - d.x, y: step.block.y - d.y }
+            let free = 0
+            for (const n of [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }]) {
+              if (playerCanStand(st, { x: stand.x + n.x, y: stand.y + n.y })) free++
+            }
+            if (free < 2) open = false
+            st = push(st, blockAt(st, step.block), step.dir).state
+          }
+          if (!open) continue
+          pushes = s2.pushes
+        }
+        found.push({ pushes, rows })
       }
     } catch {
       /* invalid layout, skip */

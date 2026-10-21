@@ -133,13 +133,15 @@ export const LEVELS: Level[] = [
     '#######'
   ]),
   // Levels 14-15 introduce the fillable pit (F): the first block that slides in is used up and the pit becomes floor.
+  // Level 14 is the gentle introduction: push the upper block down into the pit to fill it, then the other block can
+  // slide across the filled pit and onto the plate. It needs no border steps and every push is from open floor.
   parseLevel('Fill the Gap', [
     '#E#####',
-    '#.S..P#',
-    '#.....#',
-    '#...@S#',
-    '#.....#',
-    '#FB..B#',
+    '#....P#',
+    '#..SB.#',
+    '#..BF.#',
+    '#..S..#',
+    '#....@#',
     '#######'
   ]),
   parseLevel('Sacrifice', [

@@ -179,6 +179,14 @@ console.log('hint (solve from any position)')
   ok(none.solvable && none.pushes === 0 && none.steps.length === 0, 'a finished position needs no more pushes')
 }
 
+console.log('introductory levels need no border steps')
+// Levels meant to teach a new idea must be solvable from open floor alone (border steps turned into walls, exit kept).
+for (const n of [1, 14]) {
+  const level = LEVELS[n - 1]
+  const sol = solve(parseLevel('f', level.rows.map((r) => r.replace(/#/g, 'W'))))
+  ok(sol.solvable, `level ${n} "${level.name}" is solvable without standing on a border step${sol.solvable ? ` (${sol.pushes} pushes)` : ''}`)
+}
+
 console.log('special tiles are used')
 LEVELS.forEach((level, i) => {
   const rows = level.rows
@@ -190,7 +198,7 @@ LEVELS.forEach((level, i) => {
   if (/[urdl]/.test(rows.join(''))) ok(differs(plain(/[urdl]/g, 'S')), `${tag}: the fan's wind matters (not just a solid block)`)
   if (/[>v<^]/.test(rows.join(''))) ok(differs(plain(/[>v<^]/g, '.')), `${tag}: the arrows matter`)
   if (rows.join('').includes('N')) ok(differs(plain(/N/g, '.')), `${tag}: the snow matters`)
-  if (rows.join('').includes('F')) ok(differs(plain(/F/g, '.')), `${tag}: the pit matters`)
+  if (rows.join('').includes('F')) ok(differs(plain(/F/g, 'O')), `${tag}: the pit has to be filled (as a deadly hole the level is unsolvable or longer)`)
 })
 
 console.log('solver')
