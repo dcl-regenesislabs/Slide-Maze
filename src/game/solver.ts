@@ -19,7 +19,12 @@ const ids = (pts: Pt[]) =>
     .join(',')
 const key = (blocks: Pt[], filled: Pt[], reach: Pt) => ids(blocks) + '/' + ids(filled) + '|' + (reach.y * 100 + reach.x)
 
-export function solve(level: Level, limit = 2_000_000): Solution {
+/** Solve a level from its start. */
+export const solve = (level: Level, limit = 2_000_000): Solution => solveFrom(createState(level), level.start, limit)
+
+/** Solve from any position: `state` has the blocks (and filled pits) as they are now, `player` is where the avatar stands. */
+export function solveFrom(state0: GameState, player0: Pt, limit = 2_000_000): Solution {
+  const level = state0.level
   interface Node {
     state: GameState
     player: Pt
@@ -27,7 +32,7 @@ export function solve(level: Level, limit = 2_000_000): Solution {
     step: { block: Pt; dir: Dir } | null
     depth: number
   }
-  const start: Node = { state: createState(level), player: level.start, prev: null, step: null, depth: 0 }
+  const start: Node = { state: state0, player: player0, prev: null, step: null, depth: 0 }
   const seen = new Set<string>()
   let frontier: Node[] = [start]
   seen.add(key(start.state.blocks, start.state.filled, reachable(start.state, start.player).canon))

@@ -17,6 +17,8 @@ export interface Session {
   codeOpen: boolean
   menuOpen: boolean // the level-select menu
   copiedAt: number // Date.now() of the last successful copy, for the "Copied!" flash
+  hintText: string // the message shown with a hint
+  hintUntil: number // Date.now() until which the hint message is shown
 }
 
 export const session: Session = {
@@ -32,7 +34,9 @@ export const session: Session = {
   solved: false,
   codeOpen: false,
   menuOpen: false,
-  copiedAt: 0
+  copiedAt: 0,
+  hintText: '',
+  hintUntil: 0
 }
 
 // Per-level progress, this session only. Saving it between visits comes with the leaderboard work.

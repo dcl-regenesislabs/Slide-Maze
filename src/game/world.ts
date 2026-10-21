@@ -8,7 +8,8 @@ import { FX_COLORS, clearFx, confetti, dust, holeBurst, plateOn, setupFx, stopBu
 import { buildLobby, LOBBY_SPAWN } from './lobby'
 import { ARROW_DIR, DIRS, DIR_DELTA, Dir, FAN_DIR, Level, Pt } from './grid'
 import { LEVELS, levelCode } from './levels'
-import { GameState, createState, isPlateCovered, isSolved, push } from './logic'
+import { GameState, createState, isPlateCovered, isSolved, playerCanStand, push } from './logic'
+import { solveFrom } from './solver'
 import { editor, progress, session } from './session'
 
 // ---- Tuning (metres, seconds) ----
@@ -176,6 +177,7 @@ function box(r: Runtime, pos: Vector3, size: Vector3, color: Color4, collider: b
 }
 
 function clearLevel() {
+  clearHint()
   fanBlades.length = 0
   if (!rt) return
   for (const e of rt.picks) {
@@ -394,6 +396,68 @@ function refreshPlates(fx: boolean) {
   }
 }
 
+// ---- Hint ----
+let hintEnts: Entity[] = []
+
+function clearHint() {
+  for (const e of hintEnts) engine.removeEntity(e)
+  hintEnts = []
+  session.hintUntil = 0
+}
+
+/** Ask the solver for the next push from where things stand now, and mark it in the world. */
+export function showHint() {
+  if (!rt || rt.slide || session.unlocked) return
+  clearHint()
+  const say = (text: string) => {
+    session.hintText = text
+    session.hintUntil = Date.now() + 7000
+  }
+  // where the avatar stands, as a tile (falls back to the level start if it is not on a standable tile)
+  const l = rt.level
+  let from = l.start
+  if (Transform.has(engine.PlayerEntity)) {
+    const p = Transform.get(engine.PlayerEntity).position
+    const t = { x: Math.floor((p.x - (ORIGIN.x - (l.width * TILE) / 2)) / TILE), y: Math.floor((ORIGIN.z + (l.height * TILE) / 2 - p.z) / TILE) }
+    if (t.x >= 0 && t.y >= 0 && t.x < l.width && t.y < l.height && playerCanStand(rt.state, t)) from = t
+  }
+  const sol = solveFrom(rt.state, from, 60_000)
+  if (!sol.solvable) {
+    say(sol.truncated ? 'Hint: this level is too big to check from here.' : 'The level cannot be finished from here. Press Restart.')
+    return
+  }
+  if (sol.steps.length === 0) {
+    say('Every plate is covered. Head for the door!')
+    return
+  }
+  const step = sol.steps[0]
+  const d = DIR_DELTA[step.dir]
+  const mark = (pos: Vector3, scale: Vector3) => {
+    const e = engine.addEntity()
+    Transform.create(e, { position: pos, scale })
+    MeshRenderer.setSphere(e)
+    Material.setPbrMaterial(e, { albedoColor: FX_COLORS.cyan, emissiveColor: Color3.create(0.3, 0.85, 1), emissiveIntensity: 2.5, roughness: 0.3 })
+    hintEnts.push(e)
+  }
+  mark(tileCentre(step.block, l, FLOOR_TOP + BLOCK_SIZE + 1.3), Vector3.create(0.9, 0.9, 0.9)) // above the block to push
+  mark(tileCentre({ x: step.block.x - d.x, y: step.block.y - d.y }, l, FLOOR_TOP + 0.06), Vector3.create(2.6, 0.06, 2.6)) // where to stand
+  say(`Hint: stand on the ring and push the marked block. ${sol.pushes} ${sol.pushes === 1 ? 'push' : 'pushes'} to go.`)
+}
+
+function hintSystem() {
+  if (!hintEnts.length) return
+  if (Date.now() > session.hintUntil) {
+    clearHint()
+    return
+  }
+  const t = Date.now() / 1000
+  const marker = Transform.getMutable(hintEnts[0])
+  marker.position = Vector3.create(marker.position.x, marker.position.y + Math.sin(t * 4) * 0.01, marker.position.z)
+  const k = 2.6 + Math.sin(t * 5) * 0.25
+  const ring = Transform.getMutable(hintEnts[1])
+  ring.scale = Vector3.create(k, 0.06, k)
+}
+
 // ---- Actions the HUD / editor call ----
 export function restartLevel() {
   buildLevel(active.level, active.index)
@@ -477,6 +541,7 @@ function startPush(index: number, dir: Dir) {
     after: res.state
   }
   dust(from.x, FLOOR_TOP + 0.1, from.z, 5)
+  clearHint()
   if (!res.fell) {
     session.moves = res.state.moves
     if (!session.startedAt) session.startedAt = Date.now()
@@ -743,4 +808,5 @@ export function setupWorld() {
   engine.addSystem(playerFallSystem, 7, 'sm-player-fall')
   engine.addSystem(fanSystem, 6, 'sm-fan')
   engine.addSystem(doorSystem, 6, 'sm-door')
+  engine.addSystem(hintSystem, 5, 'sm-hint')
 }

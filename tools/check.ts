@@ -6,7 +6,7 @@ import { parseLevel } from '../src/game/grid'
 import { decodeLevelCode, encodeLevelCode } from '../src/game/levelCode'
 import { LEVELS, levelCode } from '../src/game/levels'
 import { canReachExit, createState, isSolved, playerCanStand, push } from '../src/game/logic'
-import { solve } from './solver'
+import { solve, solveFrom } from './solver'
 
 declare const process: { exitCode?: number }
 
@@ -153,6 +153,17 @@ LEVELS.forEach((level, i) => {
   if (sol.solvable) console.log(`       ${sol.steps.map((s) => `${s.block.x},${s.block.y}${s.dir}`).join('  ')}`)
   console.log(`       ${levelCode(level)}`)
 })
+
+console.log('hint (solve from any position)')
+{
+  const lvl = LEVELS[0]
+  const afterFirst = push(createState(lvl), 0, 'N').state // block goes north to the wall; one push (east) remains
+  const rest = solveFrom(afterFirst, { x: 3, y: 3 })
+  ok(rest.solvable && rest.pushes === 1, 'after one push of the optimal solution, one push is left')
+  const solved = push(afterFirst, 0, 'E').state
+  const none = solveFrom(solved, { x: 2, y: 1 })
+  ok(none.solvable && none.pushes === 0 && none.steps.length === 0, 'a finished position needs no more pushes')
+}
 
 console.log('special tiles are used')
 LEVELS.forEach((level, i) => {

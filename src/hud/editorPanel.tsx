@@ -1,7 +1,8 @@
 import ReactEcs, { Input, Label, UiEntity } from '@dcl/sdk/react-ecs'
 import { Color4 } from '@dcl/sdk/math'
-import { check, copyEditorCode, exitEditor, importCode, newBlank, paint, pickTool, playTest, resetBlocks, resize } from '../game/editor'
+import { canRedo, canUndo, check, copyEditorCode, exitEditor, importCode, newBlank, paint, pickTool, playTest, redo, resetBlocks, resize, undo } from '../game/editor'
 import { editor } from '../game/session'
+import { showHint } from '../game/world'
 import { openMyLevels, saveCurrentLevel } from '../game/levelStore'
 import { Card, FS, OutlineLabel, PAL, PillButton, S, hover, isHovered } from './theme'
 import { mobile } from './platform'
@@ -94,13 +95,13 @@ export const EditorPanel = () => {
   const gridH = rows * (cell + 2)
   const width = Math.max(S(390), gridW + S(40))
   const statusColor = editor.statusKind === 'ok' ? PAL.good : editor.statusKind === 'bad' ? hex('#ff8a7a') : PAL.dim
-  const height = S(560) + gridH
+  const height = S(606) + gridH
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(84), left: S(16) }, width, height, pointerFilter: 'none' }}>
       <Card width="100%" height="100%" pad={S(12)} block justify="flex-start">
         <OutlineLabel value="LEVEL EDITOR" fontSize={FS(24)} color={PAL.amber} width="100%" height={S(32)} />
         <Label
-          value="Click the grid or aim at a tile in the world and click. E / F: tool. 1: rotate. 2: reset blocks."
+          value="Click the grid, or aim at a tile in the world and click. E / F: tool. 1: rotate. 2: reset blocks. 3 / 4: undo / redo."
           fontSize={FS(12)}
           font="sans-serif"
           color={PAL.dim}
@@ -125,6 +126,11 @@ export const EditorPanel = () => {
         <UiEntity uiTransform={{ flexDirection: 'row', justifyContent: 'center', margin: { bottom: S(6) }, pointerFilter: 'none' }}>
           <SizeRow label="W" value={cols} idBase="w" onMinus={() => resize(-1, 0)} onPlus={() => resize(1, 0)} />
           <SizeRow label="H" value={rows} idBase="h" onMinus={() => resize(0, -1)} onPlus={() => resize(0, 1)} />
+        </UiEntity>
+        <UiEntity uiTransform={{ flexDirection: 'row', margin: { bottom: S(6) }, pointerFilter: 'none' }}>
+          <PillButton id="ed-undo" label={canUndo() ? 'Undo' : 'Undo -'} width={S(100)} height={S(34)} onClick={undo} margin={{ right: S(6) }} />
+          <PillButton id="ed-redo" label={canRedo() ? 'Redo' : 'Redo -'} width={S(100)} height={S(34)} onClick={redo} margin={{ right: S(6) }} />
+          <PillButton id="ed-hint" label="Hint" width={S(100)} height={S(34)} onClick={showHint} />
         </UiEntity>
         <UiEntity uiTransform={{ flexDirection: 'row', margin: { bottom: S(6) }, pointerFilter: 'none' }}>
           <PillButton id="ed-check" label="Check" width={S(100)} height={S(40)} accent onClick={check} margin={{ right: S(6) }} />

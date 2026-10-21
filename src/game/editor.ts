@@ -10,6 +10,38 @@ import { decodeLevelCode, encodeLevelCode } from './levelCode'
 import { solve } from './solver'
 import { editor, EditorTool, session } from './session'
 
+// Undo / redo: a snapshot of the rows is taken before every change.
+const MAX_HISTORY = 100
+const past: string[][] = []
+const future: string[][] = []
+
+function snapshot() {
+  past.push(editor.rows.slice())
+  if (past.length > MAX_HISTORY) past.shift()
+  future.length = 0
+}
+
+export const canUndo = () => past.length > 0
+export const canRedo = () => future.length > 0
+
+export function undo() {
+  const prev = past.pop()
+  if (!prev) return
+  future.push(editor.rows.slice())
+  editor.rows = prev
+  say('info', 'Undone.')
+  refresh()
+}
+
+export function redo() {
+  const next = future.pop()
+  if (!next) return
+  past.push(editor.rows.slice())
+  editor.rows = next
+  say('info', 'Redone.')
+  refresh()
+}
+
 const MIN_SIZE = 5
 const MAX_SIZE = 31 // 31 tiles = 93 m, inside the 128 m scene with room to walk around it
 
@@ -60,6 +92,8 @@ function editorInputSystem() {
     pickTool(paletteId(editor.tool))
   }
   if (inputSystem.isTriggered(InputAction.IA_ACTION_4, PointerEventType.PET_DOWN)) resetBlocks()
+  if (inputSystem.isTriggered(InputAction.IA_ACTION_5, PointerEventType.PET_DOWN)) undo()
+  if (inputSystem.isTriggered(InputAction.IA_ACTION_6, PointerEventType.PET_DOWN)) redo()
 }
 
 export function setupEditor() {
@@ -76,6 +110,8 @@ export function openEditor() {
     if (session.levelIndex >= 0) editor.sourceIndex = session.levelIndex
   }
   editor.rows = lvl.rows.slice()
+  past.length = 0 // a fresh editing session starts with no history
+  future.length = 0
   editor.open = true
   session.menuOpen = false
   session.codeOpen = false
@@ -125,6 +161,8 @@ export function pickTool(id: string) {
 }
 
 export function paint(x: number, y: number) {
+  if (editor.rows[y][x] === editor.tool) return // nothing to change, nothing to undo
+  snapshot()
   const rows = editor.rows.map((r) => r.split(''))
   if (editor.tool === '@') {
     // there is only one player start
@@ -139,6 +177,7 @@ export function paint(x: number, y: number) {
 export function newBlank(w = 7, h = 7) {
   w = Math.max(MIN_SIZE, Math.min(MAX_SIZE, w))
   h = Math.max(MIN_SIZE, Math.min(MAX_SIZE, h))
+  snapshot()
   editor.rows = Array.from({ length: h }, (_, y) =>
     Array.from({ length: w }, (_, x) => (x === 0 || y === 0 || x === w - 1 || y === h - 1 ? '#' : '.')).join('')
   )
@@ -153,6 +192,7 @@ export function resize(dw: number, dh: number) {
   const w = Math.max(MIN_SIZE, Math.min(MAX_SIZE, oldW + dw))
   const h = Math.max(MIN_SIZE, Math.min(MAX_SIZE, oldH + dh))
   if (w === oldW && h === oldH) return
+  snapshot()
   editor.rows = Array.from({ length: h }, (_, y) =>
     Array.from({ length: w }, (_, x) => {
       if (x === 0 || y === 0 || x === w - 1 || y === h - 1) return '#'
@@ -165,7 +205,9 @@ export function resize(dw: number, dh: number) {
 /** Open the editor on a level that came from somewhere else (a saved level). */
 export function importIntoEditor(code: string, name: string) {
   try {
-    editor.rows = decodeLevelCode(code)
+    const rows = decodeLevelCode(code)
+    snapshot()
+    editor.rows = rows
   } catch (e) {
     say('bad', (e as Error).message)
     return
@@ -180,7 +222,9 @@ export function importIntoEditor(code: string, name: string) {
 
 export function importCode(text: string) {
   try {
-    editor.rows = decodeLevelCode(text)
+    const rows = decodeLevelCode(text)
+    snapshot()
+    editor.rows = rows
     say('ok', 'Level code loaded.')
     refresh()
   } catch (e) {

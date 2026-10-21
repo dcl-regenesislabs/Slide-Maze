@@ -1,5 +1,5 @@
 import ReactEcs, { Label, UiEntity } from '@dcl/sdk/react-ecs'
-import { copyLevelCode, hasNextLevel, loadLevel, nextLevel, restartLevel, returnToLobby, toggleCode, toggleMenu } from '../game/world'
+import { copyLevelCode, hasNextLevel, loadLevel, nextLevel, restartLevel, returnToLobby, showHint, toggleCode, toggleMenu } from '../game/world'
 import { LEVELS } from '../game/levels'
 import { openEditor } from '../game/editor'
 import { closeMyLevels, deleteMyLevel, loadMyLevel, myLevels, openMyLevels } from '../game/levelStore'
@@ -81,6 +81,7 @@ const SideButtons = () => (
   >
     <PillButton id="menu" label="Levels" width={S(170)} height={S(46)} onClick={toggleMenu} margin={{ bottom: S(8) }} />
     {!session.inLobby ? <PillButton id="lobby" label="Lobby" width={S(170)} height={S(46)} onClick={returnToLobby} margin={{ bottom: S(8) }} /> : null}
+    {!session.inLobby && !session.unlocked ? <PillButton id="hint" label="Hint" width={S(170)} height={S(46)} onClick={showHint} margin={{ bottom: S(8) }} /> : null}
     {!session.inLobby ? <PillButton id="restart" label="Restart" width={S(170)} height={S(46)} onClick={restartLevel} margin={{ bottom: S(8) }} /> : null}
     {!session.inLobby ? <PillButton id="code" label="Level code" width={S(170)} height={S(46)} onClick={toggleCode} margin={{ bottom: S(8) }} /> : null}
     {EDITOR_ENABLED && editorAvailable() ? <PillButton id="edit" label="Editor" width={S(170)} height={S(46)} onClick={openEditor} /> : null}
@@ -329,6 +330,14 @@ const LevelMenu = () => {
   )
 }
 
+const HintBanner = () => (
+  <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(140), left: 0 }, width: '100%', height: S(56), justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
+    <Card width={S(640)} height={S(52)} rim={PAL.amber}>
+      <OutlineLabel value={session.hintText} fontSize={FS(18)} color={PAL.text} width="100%" height={S(30)} />
+    </Card>
+  </UiEntity>
+)
+
 /** Shown between covering the last plate and walking through the exit door. */
 const ExitBanner = () => (
   <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(84), left: 0 }, width: '100%', height: S(52), justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
@@ -347,6 +356,7 @@ export const Hud = () => {
       <SideButtons />
       {session.codeOpen && <CodePanel />}
       {session.menuOpen && <LevelMenu />}
+      {Date.now() < session.hintUntil && !session.inLobby && <HintBanner />}
       {editor.open && <EditorPanel />}
       {myLevels.panelOpen && <MyLevelsPanel />}
       {showComplete && !editor.open && !session.codeOpen && !session.menuOpen && <CompletePanel />}
