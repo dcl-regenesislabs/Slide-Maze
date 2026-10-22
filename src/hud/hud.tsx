@@ -61,32 +61,46 @@ const TopBar = () => {
         pointerFilter: 'none'
       }}
     >
-      <StatPill id="moves" caption="MOVES" value={`${session.moves}`} width={S(110)} />
-      <StatPill caption={session.levelIndex < 0 ? 'CUSTOM LEVEL' : `LEVEL ${session.levelIndex + 1}`} value={session.name} width={S(260)} />
-      <StatPill caption="TIME" value={fmtTime(elapsedMs())} width={S(130)} />
+      <StatPill id="moves" caption="MOVES" value={`${session.moves}`} width={S(100)} />
+      <StatPill caption={session.levelIndex < 0 ? 'CUSTOM LEVEL' : `LEVEL ${session.levelIndex + 1}`} value={session.name} width={S(220)} />
+      <StatPill caption="TIME" value={fmtTime(elapsedMs())} width={S(120)} />
     </UiEntity>
   )
 }
 
-const SideButtons = () => (
-  <UiEntity
-    uiTransform={{
-      positionType: 'absolute',
-      position: { top: S(84), right: S(16) },
-      width: S(170),
-      flexDirection: 'column',
-      alignItems: 'flex-end',
-      pointerFilter: 'none'
-    }}
-  >
-    <PillButton id="menu" label="Levels" width={S(170)} height={S(46)} onClick={toggleMenu} margin={{ bottom: S(8) }} />
-    {!session.inLobby ? <PillButton id="lobby" label="Lobby" width={S(170)} height={S(46)} onClick={returnToLobby} margin={{ bottom: S(8) }} /> : null}
-    {!session.inLobby && !session.unlocked ? <PillButton id="hint" label="Hint" width={S(170)} height={S(46)} onClick={showHint} margin={{ bottom: S(8) }} /> : null}
-    {!session.inLobby ? <PillButton id="restart" label="Restart" width={S(170)} height={S(46)} onClick={restartLevel} margin={{ bottom: S(8) }} /> : null}
-    {!session.inLobby ? <PillButton id="code" label="Level code" width={S(170)} height={S(46)} onClick={toggleCode} margin={{ bottom: S(8) }} /> : null}
-    {EDITOR_ENABLED && editorAvailable() ? <PillButton id="edit" label="Editor" width={S(170)} height={S(46)} onClick={openEditor} /> : null}
-  </UiEntity>
-)
+// Everything but the Options button is tucked away until it is tapped, so the corner stays clear of the phone's
+// native controls (joystick, jump) and the 3D view.
+let optionsOpen = false
+const act = (fn: () => void) => () => {
+  optionsOpen = false
+  fn()
+}
+
+const SideButtons = () => {
+  const w = S(150)
+  const h = S(42)
+  const m = { bottom: S(6) }
+  return (
+    <UiEntity
+      uiTransform={{
+        positionType: 'absolute',
+        position: { top: S(10), right: S(12) },
+        width: w,
+        flexDirection: 'column',
+        alignItems: 'flex-end',
+        pointerFilter: 'none'
+      }}
+    >
+      <PillButton id="options" label={optionsOpen ? 'Close' : 'Options'} width={w} height={h} accent={!optionsOpen} danger={optionsOpen} onClick={() => (optionsOpen = !optionsOpen)} margin={m} />
+      {optionsOpen ? <PillButton id="menu" label="Levels" width={w} height={h} onClick={act(toggleMenu)} margin={m} /> : null}
+      {optionsOpen && !session.inLobby ? <PillButton id="lobby" label="Lobby" width={w} height={h} onClick={act(returnToLobby)} margin={m} /> : null}
+      {optionsOpen && !session.inLobby && !session.unlocked ? <PillButton id="hint" label="Hint" width={w} height={h} onClick={act(showHint)} margin={m} /> : null}
+      {optionsOpen && !session.inLobby ? <PillButton id="restart" label="Restart" width={w} height={h} onClick={act(restartLevel)} margin={m} /> : null}
+      {optionsOpen && !session.inLobby ? <PillButton id="code" label="Level code" width={w} height={h} onClick={act(toggleCode)} margin={m} /> : null}
+      {optionsOpen && EDITOR_ENABLED && editorAvailable() ? <PillButton id="edit" label="Editor" width={w} height={h} onClick={act(openEditor)} margin={m} /> : null}
+    </UiEntity>
+  )
+}
 
 // The code is shown in full, in a monospace font, split into lines we choose so it never wraps mid-token.
 function chunk(text: string, perLine: number): string[] {
@@ -156,7 +170,7 @@ const CodePanel = () => {
             onClick={copyLevelCode}
             margin={{ right: S(12) }}
           />
-          <PillButton id="close-code" label="Close" width={S(140)} height={S(46)} onClick={toggleCode} />
+          <PillButton id="close-code" danger label="Close" width={S(140)} height={S(46)} onClick={toggleCode} />
         </UiEntity>
       </Card>
     </UiEntity>
@@ -257,7 +271,7 @@ const MyLevelsPanel = () => {
         </UiEntity>
         <UiEntity uiTransform={{ flexDirection: 'row', margin: { top: S(8) }, pointerFilter: 'none' }}>
           <PillButton id="mine-refresh" label="Refresh" width={S(140)} height={S(44)} onClick={openMyLevels} margin={{ right: S(10) }} />
-          <PillButton id="mine-close" label="Close" width={S(140)} height={S(44)} onClick={closeMyLevels} />
+          <PillButton id="mine-close" danger label="Close" width={S(140)} height={S(44)} onClick={closeMyLevels} />
         </UiEntity>
       </Card>
     </UiEntity>
@@ -265,6 +279,7 @@ const MyLevelsPanel = () => {
 }
 
 const COLS = 5
+
 const LevelTile = (props: { index: number; key?: string }) => {
   const i = props.index
   const id = `lv${i}`
@@ -272,13 +287,13 @@ const LevelTile = (props: { index: number; key?: string }) => {
   const pr = progress[i]
   const current = i === session.levelIndex
   const k = popFactor(id, 0.08)
-  const size = Math.round(S(92) * k)
+  const size = Math.round(S(58) * k)
   const rim = !open ? PAL.rimDim : pr.done ? PAL.good : current ? PAL.amber : PAL.rim
   const sub = !open ? 'locked' : pr.done ? `${pr.bestMoves} moves` : 'new'
   return (
     <UiEntity
       key={id}
-      uiTransform={{ width: size, height: size, margin: S(6), padding: Math.max(2, S(3)), borderRadius: S(14), pointerFilter: 'block' }}
+      uiTransform={{ width: size, height: size, margin: S(4), padding: Math.max(2, S(2)), borderRadius: S(10), pointerFilter: 'block' }}
       uiBackground={{ color: open && isHovered(id) ? PAL.amber : rim }}
       onMouseDown={() => {
         if (!open) return
@@ -288,21 +303,31 @@ const LevelTile = (props: { index: number; key?: string }) => {
       {...hover(id)}
     >
       <UiEntity
-        uiTransform={{ width: '100%', height: '100%', borderRadius: S(11), flexDirection: 'column', justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}
+        uiTransform={{ width: '100%', height: '100%', borderRadius: S(8), flexDirection: 'column', justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}
         uiBackground={{ color: open ? PAL.panelHi : PAL.panel }}
       >
-        <Label value={`${i + 1}`} fontSize={FS(32)} font="sans-serif" color={open ? PAL.text : PAL.dim} textAlign="middle-center" uiTransform={{ width: '100%', height: S(40) }} />
-        <Label value={sub} fontSize={FS(13)} font="sans-serif" color={pr.done ? PAL.good : PAL.dim} textAlign="middle-center" uiTransform={{ width: '100%', height: S(18) }} />
+        <Label value={`${i + 1}`} fontSize={FS(22)} font="sans-serif" color={open ? PAL.text : PAL.dim} textAlign="middle-center" uiTransform={{ width: '100%', height: S(26) }} />
+        <Label value={sub} fontSize={FS(10)} font="sans-serif" color={pr.done ? PAL.good : PAL.dim} textAlign="middle-center" uiTransform={{ width: '100%', height: S(14) }} />
       </UiEntity>
     </UiEntity>
   )
 }
 
+// Dragging a list on a touch screen starts on top of a tile, which swallows the gesture, so the menu is paged with
+// Prev / Next buttons instead of scrolling.
+const ROWS = 3
+const PER_PAGE = COLS * ROWS
+let menuPage = 0
+
 const LevelMenu = () => {
-  const tile = S(92) + S(12)
-  const rows = Math.ceil(LEVELS.length / COLS)
-  const width = Math.min(LEVELS.length, COLS) * tile + S(48)
-  const height = S(150) + rows * tile
+  const tile = S(58) + S(8)
+  const pages = Math.max(1, Math.ceil(LEVELS.length / PER_PAGE))
+  menuPage = Math.max(0, Math.min(menuPage, pages - 1))
+  const first = menuPage * PER_PAGE
+  const shown = LEVELS.slice(first, first + PER_PAGE)
+  const width = COLS * tile + S(48)
+  const listH = ROWS * tile + S(4)
+  const height = S(172) + listH
   return (
     <UiEntity
       uiTransform={{
@@ -314,16 +339,34 @@ const LevelMenu = () => {
         pointerFilter: 'none'
       }}
     >
-      <Card width="100%" height="100%" pad={S(18)} block>
-        <OutlineLabel value="SELECT LEVEL" fontSize={FS(26)} color={PAL.amber} width="100%" height={S(40)} />
-        <UiEntity uiTransform={{ width: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', margin: { top: S(6), bottom: S(10) }, pointerFilter: 'none' }}>
-          {LEVELS.map((_, i) => (
-            <LevelTile key={`t${i}`} index={i} />
+      <Card width="100%" height="100%" pad={S(14)} block>
+        <OutlineLabel value="SELECT LEVEL" fontSize={FS(22)} color={PAL.amber} width="100%" height={S(34)} />
+        <UiEntity
+          uiTransform={{
+            width: COLS * tile + S(16),
+            height: listH,
+            flexDirection: 'row',
+            flexWrap: 'wrap',
+            justifyContent: 'center',
+            alignContent: 'flex-start',
+            margin: { top: S(4), bottom: S(6) },
+            pointerFilter: 'none'
+          }}
+        >
+          {shown.map((_, n) => (
+            <LevelTile key={`t${first + n}`} index={first + n} />
           ))}
         </UiEntity>
+        {pages > 1 ? (
+          <UiEntity uiTransform={{ flexDirection: 'row', alignItems: 'center', margin: { bottom: S(6) }, pointerFilter: 'none' }}>
+            <PillButton id="pg-prev" label="< Prev" width={S(100)} height={S(38)} onClick={() => (menuPage = Math.max(0, menuPage - 1))} />
+            <Label value={`${menuPage + 1} / ${pages}`} fontSize={FS(18)} font="sans-serif" color={PAL.text} textAlign="middle-center" uiTransform={{ width: S(80), height: S(38) }} />
+            <PillButton id="pg-next" label="Next >" width={S(100)} height={S(38)} onClick={() => (menuPage = Math.min(pages - 1, menuPage + 1))} />
+          </UiEntity>
+        ) : null}
         <UiEntity uiTransform={{ flexDirection: 'row', pointerFilter: 'none' }}>
-          {EDITOR_ENABLED && editorAvailable() ? <PillButton id="menu-mine" label="My levels" width={S(160)} height={S(46)} accent onClick={openMyLevels} margin={{ right: S(10) }} /> : null}
-          <PillButton id="close-menu" label="Close" width={S(140)} height={S(46)} onClick={toggleMenu} />
+          {EDITOR_ENABLED && editorAvailable() ? <PillButton id="menu-mine" label="My levels" width={S(140)} height={S(40)} accent onClick={openMyLevels} margin={{ right: S(10) }} /> : null}
+          <PillButton id="close-menu" label="Close" danger width={S(110)} height={S(40)} onClick={toggleMenu} />
         </UiEntity>
       </Card>
     </UiEntity>
@@ -355,6 +398,12 @@ const ExitBanner = () => (
   </UiEntity>
 )
 
+const PlayButton = () => (
+  <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(40), left: 0 }, width: '100%', height: S(64), justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
+    <PillButton id="play" label="PLAY" width={S(220)} height={S(60)} accent onClick={() => loadLevel(0)} />
+  </UiEntity>
+)
+
 export const Hud = () => {
   const showComplete = session.solved && Date.now() - session.finishedAt > COMPLETE_DELAY_MS
   return (
@@ -363,6 +412,7 @@ export const Hud = () => {
       {session.unlocked && session.hasDoor && !session.solved && !editor.open && <ExitBanner />}
       {Date.now() < session.toastUntil && !session.inLobby && !editor.open && <ToastBanner />}
       {!editor.open && <SideButtons />}
+      {session.inLobby && !editor.open && !session.menuOpen && !myLevels.panelOpen && <PlayButton />}
       {session.codeOpen && <CodePanel />}
       {session.menuOpen && <LevelMenu />}
       {Date.now() < session.hintUntil && !session.inLobby && <HintBanner />}

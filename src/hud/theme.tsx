@@ -19,7 +19,9 @@ export const PAL = {
   amber: hex('#ffb13b'),
   amberDark: hex('#c9791a'),
   good: hex('#5dffa0'),
-  goodDark: hex('#1c8a54')
+  goodDark: hex('#1c8a54'),
+  bad: hex('#ff6b5e'),
+  badDark: hex('#a8281f')
 }
 
 // ---- Scaling ----
@@ -157,6 +159,7 @@ export const PillButton = (props: {
   width: number
   height: number
   accent?: boolean
+  danger?: boolean // red: close / cancel
   onClick: () => void
   margin?: { top?: number; left?: number; right?: number; bottom?: number }
 }) => {
@@ -164,8 +167,8 @@ export const PillButton = (props: {
   const k = popFactor(props.id, 0.08)
   const w = Math.round(props.width * k)
   const h = Math.round(props.height * k)
-  const rim = props.accent ? PAL.amber : PAL.rimDim
-  const fill = props.accent ? PAL.amberDark : PAL.panelHi
+  const rim = props.danger ? PAL.bad : props.accent ? PAL.amber : PAL.rimDim
+  const fill = props.danger ? PAL.badDark : props.accent ? PAL.amberDark : PAL.panelHi
   const border = Math.max(2, S(3))
   return (
     <UiEntity
