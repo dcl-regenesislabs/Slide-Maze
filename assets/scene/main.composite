@@ -454,7 +454,7 @@
           "json": {
             "name": "Slide Maze",
             "description": "Slide Maze: a 3D ice-sliding block puzzle",
-            "thumbnail": "",
+            "thumbnail": "assets/images/SlideMazeeTHumbnail.png",
             "categories": [],
             "author": "SDK",
             "email": "",

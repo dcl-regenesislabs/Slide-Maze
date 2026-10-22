@@ -1,7 +1,7 @@
 // Visual effects built from plain cubes and spheres (no particle systems): each effect is a small glowing primitive
 // that flies, spins, grows or shrinks and then removes itself. Everything is driven by one system.
 
-import { engine, Entity, Material, MeshRenderer, Transform } from '@dcl/sdk/ecs'
+import { engine, Entity, Material, MaterialTransparencyMode, MeshRenderer, Transform } from '@dcl/sdk/ecs'
 import { Color3, Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 
 interface Fx {
@@ -19,6 +19,7 @@ interface Fx {
   from: Vector3 // scale at birth
   to: Vector3 // scale at death
   out: boolean // ease-out scaling (fast start) instead of linear
+  bell: boolean // scale swells from `from` up to `to` early in life (about a third in) and shrinks away to almost nothing by the end
 }
 
 const live: Fx[] = []
@@ -51,7 +52,8 @@ function spawn(
   gravity = 0,
   spin = Vector3.Zero(),
   out = false,
-  rotation = Quaternion.Identity()
+  rotation = Quaternion.Identity(),
+  bell = false
 ) {
   if (live.length >= MAX_FX) return
   const e = engine.addEntity()
@@ -62,9 +64,10 @@ function spawn(
     albedoColor: color,
     emissiveColor: Color3.create(color.r, color.g, color.b),
     emissiveIntensity: glow,
-    roughness: 0.4
+    roughness: 0.4,
+    transparencyMode: color.a < 1 ? MaterialTransparencyMode.MTM_ALPHA_BLEND : undefined // a colour with alpha is see-through
   })
-  live.push({ e, age: 0, life, px: pos.x, py: pos.y, pz: pos.z, vx: vel.x, vy: vel.y, vz: vel.z, gravity, spin, from, to, out })
+  live.push({ e, age: 0, life, px: pos.x, py: pos.y, pz: pos.z, vx: vel.x, vy: vel.y, vz: vel.z, gravity, spin, from, to, out, bell })
 }
 
 /** Ice shards shed behind a sliding block. Call every few frames while it slides. */
@@ -86,9 +89,33 @@ export function trail(x: number, y: number, z: number, backX: number, backZ: num
   }
 }
 
-/** A block comes to rest: a flat shock ring on the ice plus shards thrown outward. */
+/**
+ * A block comes to rest: a square frame (four flat glowing bars) on the ice around its footprint that grows outward while it thins
+ * to nothing, plus shards thrown outward.
+ */
 export function stopBurst(x: number, y: number, z: number) {
-  spawn('sphere', v3(x, y + 0.04, z), v3(1.2, 0.08, 1.2), v3(6.5, 0.01, 6.5), FX_COLORS.ice, 1.8, 0.45, Vector3.Zero(), 0, Vector3.Zero(), true)
+  const r0 = 1.5 // half-width of the frame at the start: just outside the block
+  const r1 = 2.5 // and at the end
+  const life = 0.5
+  const v = (r1 - r0) / life
+  const len0 = 2 * r0 + 0.25
+  const len1 = 2 * r1 + 0.05
+  for (const [ax, az] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+    const alongX = az !== 0 // the bars on the north and south sides run along x
+    spawn(
+      'box',
+      v3(x + ax * r0, y + 0.06, z + az * r0),
+      alongX ? v3(len0, 0.07, 0.22) : v3(0.22, 0.07, len0),
+      alongX ? v3(len1, 0.01, 0.03) : v3(0.03, 0.01, len1),
+      FX_COLORS.ice,
+      1.8,
+      life,
+      v3(ax * v, 0, az * v),
+      0,
+      Vector3.Zero(),
+      true
+    )
+  }
   for (let i = 0; i < 12; i++) {
     const a = (i / 12) * Math.PI * 2 + rnd(-0.2, 0.2)
     const sp = rnd(3, 6)
@@ -128,7 +155,8 @@ export function confetti(x: number, y: number, z: number) {
 export function windStreak(x: number, y: number, z: number, fx: number, fz: number, dist: number) {
   const speed = 9
   const yaw = (Math.atan2(fx, fz) * 180) / Math.PI
-  spawn('box', v3(x, y, z), v3(0.07, 0.07, 1.1), v3(0.03, 0.03, 0.3), FX_COLORS.ice, 1.6, dist / speed, v3(fx * speed, 0, fz * speed), 0, Vector3.Zero(), false, Quaternion.fromEulerDegrees(0, yaw, 0))
+  // a thin, long stretched sphere along the direction of travel: the same streak as the original boxes, lighter to draw on mobile
+  spawn('sphere', v3(x, y, z), v3(0.09, 0.09, 1.6), v3(0.04, 0.04, 0.4), FX_COLORS.ice, 1.6, dist / speed, v3(fx * speed, 0, fz * speed), 0, Vector3.Zero(), false, Quaternion.fromEulerDegrees(0, yaw, 0))
 }
 
 /** A block drops into a hole: dark chips and a dull ring. */
@@ -156,7 +184,7 @@ function fxSystem(dt: number) {
     f.px += f.vx * dt
     f.py += f.vy * dt
     f.pz += f.vz * dt
-    const u = f.out ? 1 - (1 - t) * (1 - t) : t
+    const u = f.bell ? Math.sin(Math.PI * Math.pow(t, 0.6)) : f.out ? 1 - (1 - t) * (1 - t) : t
     const tr = Transform.getMutable(f.e)
     tr.position = Vector3.create(f.px, f.py, f.pz)
     tr.scale = Vector3.lerp(f.from, f.to, u)

@@ -5,7 +5,10 @@
 import { Billboard, BillboardMode, engine, Entity, InputAction, Material, MeshCollider, MeshRenderer, pointerEventsSystem, TextShape, Transform } from '@dcl/sdk/ecs'
 import { Color3, Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { session } from './session'
+import { iceModel, slabEntity, stoneModel } from './tiles'
+import { WALL_DEPTH, buildCeiling, buildCrystals, buildWallRing } from './wallRing'
 
+const LOBBY_WALL_SCALE = 0.6 // the lobby's walls are the wall modules shrunk to this fraction
 export const LOBBY_CENTRE = Vector3.create(64, 0, 14)
 /** Where the avatar arrives. Matches the spawn point in scene.json. */
 export const LOBBY_SPAWN = Vector3.create(64, 0.1, 6.5)
@@ -36,22 +39,24 @@ export function buildLobby() {
   const W = 30
   const D = 24
 
-  // floor (a hair above the cave floor, so the avatar just walks on it)
-  part(Vector3.create(c.x, 0.0, c.z), Vector3.create(W, 0.1, D), FLOOR, { collider: true, rough: 0.15, metal: 0.1 })
-
-  // cave walls: back, two sides, and a low front lip behind the spawn
-  part(Vector3.create(c.x, 3.5, c.z + D / 2), Vector3.create(W + 1, 7, 1), ROCK, { collider: true })
-  part(Vector3.create(c.x - W / 2, 3.5, c.z), Vector3.create(1, 7, D), ROCK, { collider: true })
-  part(Vector3.create(c.x + W / 2, 3.5, c.z), Vector3.create(1, 7, D), ROCK, { collider: true })
-  part(Vector3.create(c.x, 3.5, c.z - D / 2), Vector3.create(W + 1, 7, 1), ROCK, { collider: true })
-
-  // rocks along the walls, tilted so the room does not look like a box
-  const rocks: [number, number, number, number, number][] = [
-    [-13, 9, 3, 4, 20], [12, 10, 3.5, 5, -15], [-12, -8, 2.5, 3, 35], [13, -7, 3, 4, -30], [-6, 11, 2.5, 3, 10], [7, 11.2, 3, 3.5, -25]
-  ]
-  for (const [ox, oz, w, h, yaw] of rocks) {
-    part(Vector3.create(c.x + ox, h / 2, c.z + oz), Vector3.create(w, h, w * 0.9), ROCK_LIGHT, { collider: true, rot: Quaternion.fromEulerDegrees(0, yaw, 0) })
+  // floor: the game's own tiles, ice inside and a stone ledge around the edge, like a level. The ice top is at y = 0.05, where the old floor was
+  for (let j = 0; j < D / 3; j++) {
+    for (let i = 0; i < W / 3; i++) {
+      const edge = i === 0 || j === 0 || i === W / 3 - 1 || j === D / 3 - 1
+      const x = c.x - W / 2 + 1.5 + 3 * i
+      const z = c.z - D / 2 + 1.5 + 3 * j
+      // ice is 0.5 m thick and stone 0.7 m (0.2 m higher), both with the top at their centre + half the thickness
+      slabEntity(Vector3.create(x, edge ? 0.25 - 0.35 : 0.05 - 0.25, z), i, j, 0, edge ? stoneModel : iceModel)
+    }
   }
+
+  // the cave walls around the lobby: a smaller ring of wall modules (LOBBY_WALL_SCALE). The south edge is a thin ledge, because
+  // the arrival point is right behind it
+  const wd = WALL_DEPTH * LOBBY_WALL_SCALE
+  const ring = { x0: c.x - W / 2 - 4 - wd, x1: c.x + W / 2 + 4 + wd, z0: 0, z1: c.z + D / 2 + 1 + wd }
+  buildWallRing(ring, 1, true, LOBBY_WALL_SCALE)
+  buildCeiling(ring, 1, LOBBY_WALL_SCALE) // the lobby has its own ceiling, separate from the game's
+  buildCrystals(ring, 1, LOBBY_WALL_SCALE, 0.3, true)
 
   // glowing crystals
   const crystals: [number, number, number, Color4][] = [

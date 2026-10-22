@@ -12,7 +12,7 @@
 //   N  snow patch: a sliding block that enters it stops there
 //   ^ > v <  arrow: a sliding block that enters it turns to face the arrow and keeps sliding
 //   u r d l  fan (up/right/down/left = north/east/south/west): a solid device that blows along the line it faces, up to
-//            the first obstacle (its wind lane). A sliding block that enters any lane tile is pushed along the wind, like
+//            3 tiles or the first obstacle, whichever is nearer (its wind lane). A sliding block that enters any lane tile is pushed along the wind, like
 //            an arrow tile along the whole lane, and keeps sliding that way until something stops it.
 // Row 0 is the NORTH edge, so a level reads like a map seen from above.
 
@@ -34,6 +34,8 @@ export const DIR_DELTA: Record<Dir, Pt> = {
 export type Tile = '#' | 'W' | '.' | 'O' | 'P' | 'S' | 'N' | 'F' | 'E' | '^' | '>' | 'v' | '<' | 'u' | 'r' | 'd' | 'l'
 
 export const ARROW_DIR: Record<string, Dir> = { '^': 'N', '>': 'E', v: 'S', '<': 'W' }
+/** How many tiles a wind statue's wind reaches. */
+export const WIND_RANGE = 3
 export const FAN_DIR: Record<string, Dir> = { u: 'N', r: 'E', d: 'S', l: 'W' }
 
 export interface Level {
@@ -100,12 +102,13 @@ export function parseLevel(name: string, rows: string[]): Level {
   if (plates.length === 0) throw new Error('level has no pressure plate (P)')
   if (blocks.length < plates.length) throw new Error(`${plates.length} plates but only ${blocks.length} blocks`)
 
-  // wind lanes: from each fan, along the way it faces, until the first solid tile
+  // wind lanes: from each fan, along the way it faces, until the first solid tile, but at most WIND_RANGE tiles
   const solid = (t: Tile) => t === '#' || t === 'W' || t === 'S' || t === 'E' || FAN_DIR[t] !== undefined
   const wind: (Dir | null)[][] = tiles.map((r) => r.map(() => null))
   for (const fan of fans) {
     const d = DIR_DELTA[fan.dir]
-    for (let qx = fan.x + d.x, qy = fan.y + d.y; qx >= 0 && qy >= 0 && qx < width && qy < rows.length && !solid(tiles[qy][qx]); qx += d.x, qy += d.y) {
+    let n = 0
+    for (let qx = fan.x + d.x, qy = fan.y + d.y; qx >= 0 && qy >= 0 && qx < width && qy < rows.length && !solid(tiles[qy][qx]) && n < WIND_RANGE; qx += d.x, qy += d.y, n++) {
       if (wind[qy][qx] === null) wind[qy][qx] = fan.dir
     }
   }

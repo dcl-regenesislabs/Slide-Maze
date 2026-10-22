@@ -1,15 +1,17 @@
 // The 3D side of the game (greybox look): spawns a level from data, detects the avatar pushing a block,
 // animates the slide, and tells the session when the level is solved. All the rules live in logic.ts.
 
-import { ColliderLayer, engine, Entity, InputAction, Material, MaterialTransparencyMode, MeshCollider, MeshRenderer, pointerEventsSystem, Transform } from '@dcl/sdk/ecs'
+import { Animator, ColliderLayer, engine, ParticleSystem, PBParticleSystem_BlendMode, Entity, GltfContainer, InputAction, Material, MaterialTransparencyMode, MeshCollider, MeshRenderer, pointerEventsSystem, Transform } from '@dcl/sdk/ecs'
 import { Color3, Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { copyToClipboard, movePlayerTo } from '~system/RestrictedActions'
 import { FX_COLORS, clearFx, confetti, dust, holeBurst, plateOn, setupFx, stopBurst, trail, windStreak } from './fx'
 import { buildCave, buildLevelLights } from './cave'
+import { iceModel, slabEntity, stoneModel } from './tiles'
+import { buildCeiling, buildCrystals, buildWallRing, ringAround } from './wallRing'
 import { buildLobby, LOBBY_SPAWN } from './lobby'
 import { ARROW_DIR, DIRS, DIR_DELTA, Dir, FAN_DIR, Level, Pt } from './grid'
 import { LEVELS, levelCode } from './levels'
-import { GameState, createState, isPlateCovered, isSolved, playerCanStand, push, reachable } from './logic'
+import { GameState, blockAt, createState, isPlateCovered, isSolved, playerCanStand, push, reachable } from './logic'
 import { solveFrom } from './solver'
 import { editor, progress, session } from './session'
 
@@ -28,7 +30,16 @@ const PUSH_WINDOW = 0.3
 const PUSH_WINDUP = 0.6 // seconds the avatar must keep pressing against the face before the block starts to slide
 const PUSH_COOLDOWN = 0.25 // pause after a slide ends before the next push can start
 const FALL_RESET_DELAY = 0.7
-const BOUNCE_TIME = 0.25 // seconds of squash-and-stretch when a block comes to rest
+const FILL_TIME = 0.45 // seconds for a block to drop into a fillable pit
+const PLATE_CLIP = 'PressurePlatePressed' // the plate model's press animation (shape key, 7 frames)
+const PLATE_SOLID = true // the avatar collides with the plate model (it is a low step it has to climb); false = walk straight through
+const PRESS_SPEED = 40 // the press snaps down (the clip is 0.5 s at speed 1, so this is a few frames)
+const RELEASE_SPEED = 0.1 // playback speed when it comes back up (the clip played backward)
+const PRESS_TIME = 0.5 / PRESS_SPEED // seconds the press takes
+const RELEASE_TIME = 0.5 / RELEASE_SPEED // seconds one full release takes
+const BOUNCE_TIME = 0.5 // seconds the landing deformation takes to settle
+const BOUNCE_SQUASH = 0.07 // how much a block compresses along its travel direction when it lands (0.07 = 7%)
+const WALL_GAP = 14 // metres between the edge of a level and the inner face of the cave walls (the corner modules reach 6 m closer)
 const ORIGIN = Vector3.create(64, 0, 64) // world position of the level's centre (scene is 8x8 parcels = 128 m)
 
 // ---- Look ----
@@ -68,20 +79,30 @@ interface Slide {
   after: GameState // state once the slide ends
 }
 
+/** vis: the plate is shown pressed; pressT: seconds since it started pressing; pending: release as soon as the press has finished; relT: seconds since it started releasing (-1 = not releasing) */
+interface Plate {
+  entity: Entity
+  pt: Pt
+  on: boolean
+  vis: boolean
+  pressT: number
+  pending: boolean
+  relT: number
+}
+
 interface Runtime {
   level: Level
   state: GameState
   entities: Entity[]
   picks: Entity[] // editor-only: invisible pointer colliders, one per cell, so tiles can be painted from the 3D view
   blocks: Entity[]
-  plates: { entity: Entity; pt: Pt; on: boolean }[]
+  plates: Plate[]
   fans: { x: number; z: number; fx: number; fz: number; len: number }[] // wind lanes, for the wind streaks
   spawn: Vector3 | null // where the player arrives (the entrance annex), or null = the start tile
   door: { parts: Entity[]; baseY: number[]; open: number; target: boolean; cx: number; cz: number } | null // the exit door
-  pits: Record<string, Entity[]> // lip pieces of each open fillable pit, by 'x,y'
   fills: { entity: Entity; t: number; toY: number }[] // floor tiles rising into filled pits
   slide: Slide | null
-  bounce: { index: number; t: number } | null
+  bounce: { index: number; t: number; dx: number; dz: number; bx: number; bz: number } | null // dx, dz: the way the block was travelling; bx, bz: where it rests
   cooldown: number
   resetIn: number // >0 = counting down to a reset (the player fell)
 }
@@ -120,43 +141,89 @@ const tileX = (x: number, level: Level) => ORIGIN.x + (x - (level.width - 1) / 2
 const tileZ = (y: number, level: Level) => ORIGIN.z + ((level.height - 1) / 2 - y) * TILE // row 0 = north = +z
 const tileCentre = (p: Pt, level: Level, y: number) => Vector3.create(tileX(p.x, level), y, tileZ(p.y, level))
 
-// ---- Fan blades (spin) and arrow glyphs ----
-const fanBlades: { entity: Entity; yaw: number; phase: number }[] = []
-let fanAngle = 0
-let windT = 0
+// ---- Wind: dust puffs and streaks ----
+let streakT = 0
+const STREAK_EVERY = 0.3 // seconds between wind streaks, per wind statue
+const MOUTH_FORWARD = 1.3 // metres in front of the statue's centre where the wind leaves its mouth
+const MOUTH_HEIGHT = 0.9 // and how high above the floor
 
 function fanSystem(dt: number) {
-  fanAngle = (fanAngle + 720 * dt) % 360
-  for (const b of fanBlades) {
-    Transform.getMutable(b.entity).rotation = Quaternion.fromEulerDegrees(0, b.yaw, fanAngle + b.phase)
-  }
-  windT += dt
-  if (rt && windT > 0.3) {
-    windT = 0
-    for (const f of rt.fans) {
-      if (f.len < 1) continue
-      const start = Math.floor(Math.random() * f.len) // a random tile along the lane
-      const dist = Math.min(f.len - start, 3) * TILE
-      const off = (TILE * 0.5) + start * TILE
-      windStreak(f.x + f.fx * off + (Math.random() - 0.5) * 1.2 * Math.abs(f.fz), FLOOR_TOP + 0.4 + Math.random() * 1.6, f.z + f.fz * off + (Math.random() - 0.5) * 1.2 * Math.abs(f.fx), f.fx, f.fz, dist)
-    }
+  streakT += dt
+  if (!rt || streakT <= STREAK_EVERY) return
+  streakT = 0
+  for (const f of rt.fans) {
+    if (f.len < 1) continue
+    const start = Math.floor(Math.random() * f.len) // a random tile along the lane
+    const dist = Math.min(f.len - start, 3) * TILE
+    const off = (TILE * 0.5) + start * TILE
+    windStreak(f.x + f.fx * off + (Math.random() - 0.5) * 1.2 * Math.abs(f.fz), FLOOR_TOP + 0.4 + Math.random() * 1.6, f.z + f.fz * off + (Math.random() - 0.5) * 1.2 * Math.abs(f.fx), f.fx, f.fz, dist)
   }
 }
 
-/** A glowing arrow lying on the ice, pointing along the world direction (fx, fz). */
-function arrowGlyph(r: Runtime, c: Vector3, fx: number, fz: number) {
+/**
+ * An arrow tile ('^ > v <'): the ArrowPlate model, which shares the ice tile's origin, so it goes where the ice tile is. Its
+ * looping idle animation plays all the time, and its "_collider" child is the only part that collides. The world direction
+ * (fx, fz) is the way a block gets turned.
+ */
+const ARROW_MODEL_YAW = 180 // the model's arrow points along -Z at rotation 0; if the arrows all point the wrong way in game, change this
+function arrowPlate(r: Runtime, pos: Vector3, fx: number, fz: number): Entity {
+  const yaw = (Math.atan2(fx, fz) * 180) / Math.PI + ARROW_MODEL_YAW
+  const e = engine.addEntity()
+  Transform.create(e, { position: pos, rotation: Quaternion.fromEulerDegrees(0, yaw, 0) })
+  GltfContainer.create(e, {
+    src: 'assets/models/arrowPlate01.glb',
+    visibleMeshesCollisionMask: 0,
+    invisibleMeshesCollisionMask: ColliderLayer.CL_PHYSICS
+  })
+  Animator.create(e, { states: [{ clip: 'ArrowPlateIdle', playing: true, loop: true, speed: 1 }] })
+  r.entities.push(e)
+  return e
+}
+
+const WIND_IDLE_SPEED = 1.25 // playback speed of the wind statue's idle animation
+
+/**
+ * The wind dust: a soft cloud of cyan-white particles blowing out of the statue's mouth along its lane. A particle lives exactly
+ * long enough to reach the end of the lane (`len` tiles, from the mouth), starts small, and shrinks away towards the end. One
+ * emitter per statue (mobile allows about 8 emitters in a scene).
+ */
+function windGust(r: Runtime, c: Vector3, fx: number, fz: number, len: number) {
+  const speed = 4.5
+  const reach = len * TILE + (TILE / 2 - MOUTH_FORWARD) // from the mouth to the far end of the lane
+  const e = engine.addEntity()
+  Transform.create(e, {
+    position: Vector3.create(c.x + fx * MOUTH_FORWARD, FLOOR_TOP + MOUTH_HEIGHT, c.z + fz * MOUTH_FORWARD),
+    rotation: Quaternion.fromEulerDegrees(0, (Math.atan2(fx, fz) * 180) / Math.PI, 0)
+  })
+  ParticleSystem.create(e, {
+    rate: 18,
+    maxParticles: 70,
+    lifetime: reach / speed,
+    initialVelocitySpeed: { start: speed, end: speed },
+    initialSize: { start: 0.25, end: 0.45 },
+    sizeOverTime: { start: 1.2, end: 0.1 },
+    colorOverTime: { start: Color4.create(0.75, 0.97, 1, 0.5), end: Color4.create(0.45, 0.9, 1, 0) },
+    texture: { src: 'assets/images/windPuff.png' },
+    blendMode: PBParticleSystem_BlendMode.PSB_ADD,
+    billboard: true,
+    shape: ParticleSystem.Shape.Cone({ angle: 7, radius: 0.25 })
+  })
+  r.entities.push(e)
+}
+
+/** A wind statue: the WindCube model, turned so its mouth faces the way it blows (world direction fx, fz). */
+function windCube(r: Runtime, pos: Vector3, fx: number, fz: number): Entity {
   const yaw = (Math.atan2(fx, fz) * 180) / Math.PI
-  const rad = (yaw * Math.PI) / 180
-  // local (x = right, z = forward) -> world
-  const at = (lx: number, lz: number) =>
-    Vector3.create(c.x + lx * Math.cos(rad) + lz * Math.sin(rad), c.y, c.z - lx * Math.sin(rad) + lz * Math.cos(rad))
-  const part = (lx: number, lz: number, w: number, l: number, extraYaw: number) => {
-    const e = box(r, at(lx, lz), Vector3.create(w, 0.06, l), ARROW, false, { glow: 1.6, roughness: 0.3 })
-    Transform.getMutable(e).rotation = Quaternion.fromEulerDegrees(0, yaw + extraYaw, 0)
-  }
-  part(0, -0.2, 0.36, 1.5, 0) // shaft
-  part(-0.42, 0.55, 0.36, 1.0, 45) // head, left bar
-  part(0.42, 0.55, 0.36, 1.0, -45) // head, right bar
+  const e = engine.addEntity()
+  Transform.create(e, { position: pos, rotation: Quaternion.fromEulerDegrees(0, yaw, 0) })
+  GltfContainer.create(e, {
+    src: 'assets/models/WindCube01.glb',
+    visibleMeshesCollisionMask: 0,
+    invisibleMeshesCollisionMask: ColliderLayer.CL_PHYSICS
+  })
+  Animator.create(e, { states: [{ clip: 'WindCubeIdle', playing: true, loop: true, speed: WIND_IDLE_SPEED }] })
+  r.entities.push(e)
+  return e
 }
 
 // ---- Building ----
@@ -180,9 +247,48 @@ function box(r: Runtime, pos: Vector3, size: Vector3, color: Color4, collider: b
   return e
 }
 
+const FILL_GAP_MODEL = 'assets/models/FillGapTile01.glb'
+
+// A floor slab (ice, or the stone ledge): see tiles.ts.
+function slab(r: Runtime, pos: Vector3, x: number, y: number, model: (n: number) => string): Entity {
+  const e = slabEntity(pos, x, y, active.index, model)
+  r.entities.push(e)
+  return e
+}
+const iceTile = (r: Runtime, pos: Vector3, x: number, y: number) =>
+  slab(r, pos, x, y, iceModel)
+const stoneTile = (r: Runtime, pos: Vector3, x: number, y: number) =>
+  slab(r, pos, x, y, stoneModel)
+
+// A movable block: the SlideCube model, which is already BLOCK_SIZE metres wide, so its scale is 1 (the squash-and-stretch
+// and sink animations scale it relative to that).
+function slideCube(r: Runtime, pos: Vector3): Entity {
+  const e = engine.addEntity()
+  Transform.create(e, { position: pos })
+  GltfContainer.create(e, { src: 'assets/models/SlideCube01.glb', visibleMeshesCollisionMask: ColliderLayer.CL_PHYSICS })
+  r.entities.push(e)
+  return e
+}
+
+// A static cube ('S'): the WallCube model. Its origin is on the floor (the ice surface), and its "_collider" child is the
+// invisible collision mesh, so only that child collides. It is turned in 90 degree steps from a hash of its tile.
+function wallCube(r: Runtime, pos: Vector3, x: number, y: number): Entity {
+  let h = Math.imul(x + 1, 73856093) ^ Math.imul(y + 1, 19349663) ^ Math.imul(active.index + 1, 83492791)
+  h = Math.imul(h ^ (h >>> 13), 1274126177)
+  h ^= h >>> 16
+  const e = engine.addEntity()
+  Transform.create(e, { position: pos, rotation: Quaternion.fromEulerDegrees(0, 90 * ((h >>> 8) & 3), 0) })
+  GltfContainer.create(e, {
+    src: 'assets/models/Wallcube01.glb',
+    visibleMeshesCollisionMask: 0,
+    invisibleMeshesCollisionMask: ColliderLayer.CL_PHYSICS
+  })
+  r.entities.push(e)
+  return e
+}
+
 function clearLevel() {
   clearHint()
-  fanBlades.length = 0
   if (!rt) return
   for (const e of rt.picks) {
     pointerEventsSystem.removeOnPointerDown(e)
@@ -208,7 +314,6 @@ function buildLevel(level: Level, index: number) {
     fans: [],
     spawn: null,
     door: null,
-    pits: {},
     fills: [],
     slide: null,
     bounce: null,
@@ -223,7 +328,7 @@ function buildLevel(level: Level, index: number) {
       const p = { x, y }
       if (t === '#' || t === 'E') {
         const h = FLOOR_THICK + STEP_HEIGHT
-        box(r, tileCentre(p, level, ELEV + h / 2), Vector3.create(TILE, h, TILE), STEP, true, { roughness: 0.6 })
+        stoneTile(r, tileCentre(p, level, ELEV + h / 2), x, y)
         if (t === 'E' && level.exitSide) {
           // the exit step: a walkable ledge with a glowing threshold. The door itself stands outside the square.
           box(r, tileCentre(p, level, FLOOR_TOP + STEP_HEIGHT + 0.03), Vector3.create(TILE * 0.7, 0.06, TILE * 0.7), DOOR_RUNE, false, { glow: 0.8, roughness: 0.4 })
@@ -232,41 +337,27 @@ function buildLevel(level: Level, index: number) {
       } else if (t === 'W') {
         box(r, tileCentre(p, level, ELEV + WALL_HEIGHT / 2), Vector3.create(TILE, WALL_HEIGHT, TILE), WALL, true)
       } else if (FAN_DIR[t]) {
-        // a fan is a solid device standing on the ice: dark housing, spinning blades on the face that blows
+        // a wind statue (WindCube01) stands on the ice and blows out of its mouth. Its origin is on the floor, its face looks along +Z
+        // at rotation 0, its looping idle animation plays all the time, and its "_collider" child is the only part that collides
         const d = DIR_DELTA[FAN_DIR[t]]
         const fx = d.x
         const fz = -d.y
         const c = tileCentre(p, level, 0)
-        box(r, tileCentre(p, level, FLOOR_TOP - FLOOR_THICK / 2), Vector3.create(TILE, FLOOR_THICK, TILE), (x + y) % 2 === 0 ? ICE_A : ICE_B, true, { metallic: 0.1, roughness: 0.12 })
-        const body = box(r, tileCentre(p, level, FLOOR_TOP + 0.8), Vector3.create(TILE * 0.8, 1.6, TILE * 0.8), FAN_BODY, true, { metallic: 0.4, roughness: 0.4 })
-        Transform.getMutable(body).rotation = Quaternion.fromEulerDegrees(0, (Math.atan2(fx, fz) * 180) / Math.PI, 0)
-        const yaw = (Math.atan2(fx, fz) * 180) / Math.PI
-        const hub = Vector3.create(c.x + fx * (TILE * 0.4 + 0.1), FLOOR_TOP + 0.8, c.z + fz * (TILE * 0.4 + 0.1))
-        for (let b = 0; b < 2; b++) {
-          const blade = box(r, hub, Vector3.create(TILE * 0.7, 0.2, 0.06), FAN_BLADE, false, { glow: 0.8, roughness: 0.3 })
-          fanBlades.push({ entity: blade, yaw, phase: b * 90 })
-        }
+        iceTile(r, tileCentre(p, level, FLOOR_TOP - FLOOR_THICK / 2), x, y)
+        windCube(r, tileCentre(p, level, FLOOR_TOP), fx, fz)
         // wind lane length for the streaks: the tiles the rules treat as windy (so they always agree)
         let len = 0
         for (let q = { x: x + d.x, y: y + d.y }; q.x >= 0 && q.y >= 0 && q.x < level.width && q.y < level.height && level.wind[q.y][q.x] === FAN_DIR[t]; q = { x: q.x + d.x, y: q.y + d.y }) len++
         r.fans.push({ x: c.x, z: c.z, fx, fz, len })
+        if (len >= 1) windGust(r, c, fx, fz, len)
       } else if (t === 'O') {
         // no floor at all: the level floats, so a block or the avatar that goes in really drops to the ground below
       } else if (t === 'F') {
-        // fillable pit: also no floor, but an amber lip on every side shows that a block can fill it
-        const lips: Entity[] = []
-        const c = tileCentre(p, level, FLOOR_TOP + 0.06)
-        const half = TILE / 2 - 0.09
-        for (const [ox, oz, sx, sz] of [[0, half, TILE, 0.18], [0, -half, TILE, 0.18], [half, 0, 0.18, TILE], [-half, 0, 0.18, TILE]]) {
-          lips.push(box(r, Vector3.create(c.x + ox, c.y, c.z + oz), Vector3.create(sx, 0.12, sz), PIT_LIP, false, { glow: 0.9, roughness: 0.4 }))
-        }
-        r.pits[`${x},${y}`] = lips
+        // fillable pit: an ice tile with a square shaft cut through it (FillGapTile01). The shaft is as deep as a block is tall, so the
+        // block that slides in sinks until its top is flush with the ice and stays there as the floor. Same origin as an ice tile.
+        slab(r, tileCentre(p, level, FLOOR_TOP - FLOOR_THICK / 2), x, y, () => FILL_GAP_MODEL)
       } else {
-        const ice = (x + y) % 2 === 0 ? ICE_A : ICE_B
-        box(r, tileCentre(p, level, FLOOR_TOP - FLOOR_THICK / 2), Vector3.create(TILE, FLOOR_THICK, TILE), ice, true, {
-          metallic: 0.1,
-          roughness: 0.12
-        })
+        iceTile(r, tileCentre(p, level, FLOOR_TOP - FLOOR_THICK / 2), x, y)
         if (t === 'N') {
           // snow patch: a matte white drift with a few lumps, so it reads as "grippy" against the glossy ice
           box(r, tileCentre(p, level, FLOOR_TOP + 0.06), Vector3.create(TILE * 0.9, 0.12, TILE * 0.9), SNOW, false, { roughness: 1 })
@@ -275,37 +366,36 @@ function buildLevel(level: Level, index: number) {
           }
         } else if (ARROW_DIR[t]) {
           const d = DIR_DELTA[ARROW_DIR[t]]
-          arrowGlyph(r, tileCentre(p, level, FLOOR_TOP + 0.05), d.x, -d.y)
+          arrowPlate(r, tileCentre(p, level, FLOOR_TOP - FLOOR_THICK / 2), d.x, -d.y)
         } else if (t === 'P') {
-          const plate = box(
-            r,
-            tileCentre(p, level, FLOOR_TOP + 0.03),
-            Vector3.create(TILE * 0.72, 0.06, TILE * 0.72),
-            PLATE_OFF,
-            false,
-            { glow: 0.6 }
-          )
-          r.plates.push({ entity: plate, pt: p, on: false })
-        } else if (t === 'S') {
-          box(r, tileCentre(p, level, FLOOR_TOP + BLOCK_SIZE / 2), Vector3.create(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE), STATIC, true, {
-            roughness: 0.9
+          // the plate model shares the ice tile's origin, so it goes exactly where the ice tile is; its animation presses it
+          const plate = engine.addEntity()
+          Transform.create(plate, { position: tileCentre(p, level, FLOOR_TOP - FLOOR_THICK / 2) })
+          GltfContainer.create(plate, {
+            src: 'assets/models/pressurePlate01.glb',
+            visibleMeshesCollisionMask: PLATE_SOLID ? ColliderLayer.CL_PHYSICS : 0
           })
+          // held on frame 0 (playing, speed 0): a clip that is merely not playing can show its last pose, i.e. pressed
+          Animator.create(plate, { states: [{ clip: PLATE_CLIP, playing: true, loop: false, speed: 0, shouldReset: true }] })
+          r.entities.push(plate)
+          r.plates.push({ entity: plate, pt: p, on: false, vis: false, pressT: 0, pending: false, relT: -1 })
+        } else if (t === 'S') {
+          wallCube(r, tileCentre(p, level, FLOOR_TOP), x, y)
         }
       }
     }
   }
 
   for (const b of level.blocks) {
-    r.blocks.push(
-      box(r, tileCentre(b, level, FLOOR_TOP + BLOCK_SIZE / 2), Vector3.create(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE), MOVABLE, true, {
-        roughness: 0.35,
-        glow: 0.25
-      })
-    )
+    r.blocks.push(slideCube(r, tileCentre(b, level, FLOOR_TOP + BLOCK_SIZE / 2)))
   }
 
   buildUnderside(r)
   buildEntrance(r)
+  // the cave around the game, sized to this level (the clear space inside is the level plus a gap, so corners never touch the slab):
+  // walls, its own ceiling, and glowing crystals on the walls
+  const ring = ringAround({ x: ORIGIN.x, z: ORIGIN.z }, (level.width * TILE) / 2, (level.height * TILE) / 2, WALL_GAP)
+  r.entities.push(...buildWallRing(ring, index + 7), ...buildCeiling(ring, index + 7), ...buildCrystals(ring, index + 7))
   if (editor.open) {
     buildGrid(r)
     buildPicks(r)
@@ -340,12 +430,28 @@ function buildUnderside(r: Runtime) {
   const d = level.height * TILE
   const layers: [number, number, number, number][] = [
     // [size factor, height, yaw, centre depth below the slab]
-    [0.96, 2.2, 4, 1.1],
-    [0.74, 2.6, -7, 3.5],
-    [0.5, 2.6, 9, 6.1],
-    [0.3, 2.2, -5, 8.4]
+    [0.96, 2.8, 4, 1.4], // reaches down past the floor of a fillable pit (2.7 m under the ice top), which is cut out of it
+    [0.74, 2.6, -7, 4.1],
+    [0.5, 2.6, 9, 6.7],
+    [0.3, 2.2, -5, 9.0]
   ]
-  layers.forEach(([k, h, yaw, depth], i) => {
+  // the top layer sits just under the ice, so it is built from runs of cells with the fillable pits left out: their shafts stay open
+  const [, topH, , topDepth] = layers[0]
+  for (let y = 0; y < level.height; y++) {
+    let x = 0
+    while (x < level.width) {
+      if (level.tiles[y][x] === 'F') {
+        x++
+        continue
+      }
+      let x2 = x
+      while (x2 < level.width && level.tiles[y][x2] !== 'F') x2++
+      box(r, Vector3.create((tileX(x, level) + tileX(x2 - 1, level)) / 2, ELEV - topDepth, tileZ(y, level)), Vector3.create((x2 - x) * TILE, topH, TILE), ISLAND, false, { roughness: 0.95 })
+      x = x2
+    }
+  }
+  layers.slice(1).forEach(([k, h, yaw, depth], i0) => {
+    const i = i0 + 1
     box(r, Vector3.create(ORIGIN.x, ELEV - depth, ORIGIN.z), Vector3.create(w * k, h, d * k), i % 2 === 0 ? ISLAND : ISLAND_LIGHT, false, { roughness: 0.95 })
     Transform.getMutable(r.entities[r.entities.length - 1]).rotation = Quaternion.fromEulerDegrees(0, yaw, 0)
   })
@@ -478,12 +584,79 @@ export function teleportToStart() {
   prevPlayer = null
 }
 
-/** Update plate colours; `fx` plays the burst for plates that just became covered. */
+/** Press the plate: the clip plays forward so fast that it snaps to the pressed pose. */
+function pressPlate(p: Plate) {
+  const st = Animator.getMutable(p.entity).states[0]
+  st.playing = true
+  st.loop = false
+  st.speed = PRESS_SPEED
+  st.shouldReset = true
+  p.vis = true
+  p.pending = false
+  p.relT = -1
+  p.pressT = 0
+}
+
+/** Release the plate (play the clip backward) once the press has had time to finish, so a quick pass still shows a full dip. */
+function releasePlate(p: Plate) {
+  if (!p.vis) return
+  if (p.pressT < PRESS_TIME) {
+    p.pending = true
+    return
+  }
+  const st = Animator.getMutable(p.entity).states[0]
+  st.playing = true
+  st.loop = false
+  st.speed = -RELEASE_SPEED
+  st.shouldReset = false
+  p.vis = false
+  p.pending = false
+  p.relT = 0
+}
+
+/** Per-frame plate timers: finish a delayed release, and park a released plate back on frame 0. */
+function plateTick(dt: number) {
+  if (!rt) return
+  for (const p of rt.plates) {
+    if (p.vis) {
+      p.pressT += dt
+      if (p.pending && p.pressT >= PRESS_TIME) releasePlate(p)
+    } else if (p.relT >= 0) {
+      p.relT += dt
+      if (p.relT >= RELEASE_TIME + 0.1) {
+        const st = Animator.getMutable(p.entity).states[0]
+        st.playing = true
+        st.speed = 0
+        st.shouldReset = true
+        p.relT = -1
+      }
+    }
+  }
+}
+
+/** While a block slides: a plate presses as the block enters its tile and releases as it leaves, so a block that only passes over plays both. */
+function updatePlatesUnder(pos: Vector3, blockIndex: number) {
+  if (!rt) return
+  for (const p of rt.plates) {
+    const c = tileCentre(p.pt, rt.level, 0)
+    const inside = Math.abs(pos.x - c.x) < TILE / 2 && Math.abs(pos.z - c.z) < TILE / 2
+    const other = blockAt(rt.state, p.pt) // a block resting here keeps it pressed (the sliding one is still in the state at its start)
+    const held = other !== -1 && other !== blockIndex
+    if (inside || held) {
+      if (!p.vis) pressPlate(p)
+      else p.pending = false
+    } else releasePlate(p)
+  }
+}
+
+/** Sync the plates with the rules: `fx` plays the burst for plates that just became covered. */
 function refreshPlates(fx: boolean) {
   if (!rt) return
   for (const p of rt.plates) {
     const on = isPlateCovered(rt.state, p.pt)
-    pbr(p.entity, on ? PLATE_ON : PLATE_OFF, { glow: on ? 2.5 : 0.6 })
+    if (on && !p.vis) pressPlate(p)
+    else if (on) p.pending = false
+    else releasePlate(p)
     if (fx && on && !p.on) {
       const c = Transform.get(p.entity).position
       plateOn(c.x, FLOOR_TOP, c.z)
@@ -502,6 +675,10 @@ function archFrame(r: Runtime, c: Vector3, spansX: boolean, baseY: number) {
   box(r, at(0, baseY + 3.15), sz(TILE - 1.2, 0.1, 0.5), DOOR_RUNE, false, { glow: 0.9, roughness: 0.4 }) // rune strip under the lintel
 }
 
+// the annex floor is a stone tile, the same thickness (and so height) as the '#' ledge it joins
+const ANNEX_THICK = FLOOR_THICK + STEP_HEIGHT
+const ANNEX_TOP = ELEV + ANNEX_THICK
+
 const SIDE_VEC: Record<Dir, { x: number; z: number }> = { N: { x: 0, z: 1 }, S: { x: 0, z: -1 }, E: { x: 1, z: 0 }, W: { x: -1, z: 0 } }
 
 /**
@@ -516,7 +693,7 @@ function buildAnnex(r: Runtime, borderPt: Pt, side: Dir, withDoor: boolean): Non
   const cx = bc.x + o.x * TILE
   const cz = bc.z + o.z * TILE
   const spansX = o.z !== 0 // the opening faces along z, so it spans x
-  box(r, Vector3.create(cx, FLOOR_TOP - FLOOR_THICK / 2, cz), Vector3.create(TILE, FLOOR_THICK, TILE), ICE_B, true, { metallic: 0.1, roughness: 0.12 })
+  stoneTile(r, Vector3.create(cx, ELEV + ANNEX_THICK / 2, cz), borderPt.x + o.x + 17, borderPt.y - o.z + 31)
   box(r, Vector3.create(cx, ELEV - 1.4, cz), Vector3.create(TILE * 0.9, 2.2, TILE * 0.9), ISLAND, false, { roughness: 0.95 })
   // side walls, from the border inwards to the arch
   for (const lat of [-(TILE / 2 - 0.3), TILE / 2 - 0.3]) {
@@ -526,14 +703,14 @@ function buildAnnex(r: Runtime, borderPt: Pt, side: Dir, withDoor: boolean): Non
     box(r, Vector3.create(mx, ELEV + WALL_HEIGHT / 2, mz), spansX ? Vector3.create(0.6, WALL_HEIGHT, len) : Vector3.create(len, WALL_HEIGHT, 0.6), WALL, true)
   }
   const edge = Vector3.create(cx + o.x * (TILE / 2 - 0.35), 0, cz + o.z * (TILE / 2 - 0.35))
-  archFrame(r, edge, spansX, FLOOR_TOP)
+  archFrame(r, edge, spansX, ANNEX_TOP)
   const parts: Entity[] = []
   const baseY: number[] = []
   if (withDoor) {
     const at = (lat: number, y: number) => Vector3.create(edge.x + (spansX ? lat : 0), y, edge.z + (spansX ? 0 : lat))
     const sz = (lat: number, h: number, thick: number) => (spansX ? Vector3.create(lat, h, thick) : Vector3.create(thick, h, lat))
     for (const side2 of [-1, 1]) {
-      const leafY = FLOOR_TOP + 1.6
+      const leafY = ANNEX_TOP + 1.6
       parts.push(box(r, at(side2 * (TILE / 4 - 0.02), leafY), sz(TILE / 2 - 0.3, 3.2, 0.5), DOOR_LEAF, true, { roughness: 0.6 }))
       baseY.push(leafY)
       // a dim rune bar across each leaf; it is what lights up on the real art
@@ -565,7 +742,7 @@ function buildEntrance(r: Runtime) {
   for (const o of options) {
     if (l.tiles[o.y][o.x] !== '#' || !reach.has(o.y * l.width + o.x)) continue // a step you can actually walk onto
     const annex = buildAnnex(r, { x: o.x, y: o.y }, outwardSide(l, o), false)
-    r.spawn = Vector3.create(annex.cx, FLOOR_TOP + 0.1, annex.cz)
+    r.spawn = Vector3.create(annex.cx, ANNEX_TOP + 0.1, annex.cz)
     return
   }
 }
@@ -697,6 +874,7 @@ function startPush(index: number, dir: Dir) {
     rt.cooldown = PUSH_COOLDOWN
     return
   }
+  if (rt.bounce && rt.bounce.index === index) endBounce() // pushed again before it finished settling
   const from = Transform.get(rt.blocks[index]).position
   const pts = [Vector3.clone(from), ...res.path.map((p) => tileCentre(p, rt!.level, FLOOR_TOP + BLOCK_SIZE / 2))]
   const lens = pts.slice(1).map((p, i) => Vector3.distance(pts[i], p))
@@ -723,23 +901,38 @@ function startPush(index: number, dir: Dir) {
   samples.length = 0
 }
 
+/** Stop the landing deformation: the block goes back to its exact size and resting place. */
+function endBounce() {
+  if (!rt || !rt.bounce) return
+  const b = rt.bounce
+  const e = rt.blocks[b.index]
+  rt.bounce = null
+  if (!e) return
+  const tr = Transform.getMutable(e)
+  tr.scale = Vector3.One()
+  tr.position = Vector3.create(b.bx, FLOOR_TOP + BLOCK_SIZE / 2, b.bz)
+}
+
 function slideSystem(dt: number) {
   if (!rt) return
+  plateTick(dt)
 
-  // squash-and-stretch after a block stops
+  // landing: the block is squashed along the way it was travelling, its landing side stays put and it bulges a little across and up,
+  // then it springs back with a small overshoot (a damped wobble)
   if (rt.bounce) {
     const b = rt.bounce
     b.t += dt
-    const tr = Transform.getMutable(rt.blocks[b.index])
-    if (b.t >= BOUNCE_TIME) {
-      tr.scale = Vector3.create(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE)
-      tr.position = Vector3.create(tr.position.x, FLOOR_TOP + BLOCK_SIZE / 2, tr.position.z)
-      rt.bounce = null
-    } else {
-      const k = Math.sin((b.t / BOUNCE_TIME) * Math.PI)
-      const h = BLOCK_SIZE * (1 - 0.1 * k)
-      tr.scale = Vector3.create(BLOCK_SIZE * (1 + 0.05 * k), h, BLOCK_SIZE * (1 + 0.05 * k))
-      tr.position = Vector3.create(tr.position.x, FLOOR_TOP + h / 2, tr.position.z)
+    if (b.t >= BOUNCE_TIME) endBounce()
+    else {
+      const a = (1 - Math.exp(-b.t / 0.03)) * Math.exp(-4.5 * b.t) * Math.cos(2 * Math.PI * 1.8 * b.t) // 1 = fully squashed
+      const squash = BOUNCE_SQUASH * a
+      const along = 1 - squash
+      const across = 1 + squash * 0.5
+      const tr = Transform.getMutable(rt.blocks[b.index])
+      const xAxis = Math.abs(b.dx) > Math.abs(b.dz)
+      tr.scale = Vector3.create(xAxis ? along : across, across, xAxis ? across : along)
+      const half = BLOCK_SIZE / 2
+      tr.position = Vector3.create(b.bx + b.dx * half * (1 - along), FLOOR_TOP + (BLOCK_SIZE * across) / 2, b.bz + b.dz * half * (1 - along))
     }
   }
 
@@ -770,6 +963,7 @@ function slideSystem(dt: number) {
     const b = s.pts[i + 1]
     const len = s.lens[i]
     t.position = Vector3.lerp(a, b, len === 0 ? 1 : Math.min(1, d / len))
+    updatePlatesUnder(t.position, s.index)
     s.trailT += dt
     if (s.trailT > 0.04 && len > 0) {
       s.trailT = 0
@@ -792,27 +986,19 @@ function slideSystem(dt: number) {
   }
 
   if (s.consumed) {
-    // the block sinks into the pit and is used up; a floor tile rises where the pit was
+    // the block drops into the pit until its top is flush with the ice, and stays there as the floor
     if (!s.burst) {
       s.burst = true
       dust(s.to.x, FLOOR_TOP + 0.2, s.to.z, 8, FX_AMBER)
     }
     s.fallT += dt
-    const k = Math.min(1, s.fallT / 0.35)
-    t.scale = Vector3.create(BLOCK_SIZE * (1 - k), BLOCK_SIZE * (1 - k), BLOCK_SIZE * (1 - k))
-    t.position = Vector3.create(s.to.x, s.to.y - 3.2 * k, s.to.z)
+    const k = Math.min(1, s.fallT / FILL_TIME)
+    const ease = 1 - (1 - k) * (1 - k) * (1 - k)
+    t.position = Vector3.create(s.to.x, s.to.y - BLOCK_SIZE * ease, s.to.z)
     if (k < 1) return
-    const pit = s.after.filled[s.after.filled.length - 1]
-    const gone = rt.blocks[s.index]
-    engine.removeEntity(gone)
-    rt.entities = rt.entities.filter((e) => e !== gone)
+    // it is no longer a block to push: forget it, but keep the entity (it is cleaned up with the level)
     rt.blocks.splice(s.index, 1)
-    for (const lip of rt.pits[`${pit.x},${pit.y}`] ?? []) engine.removeEntity(lip)
-    rt.entities = rt.entities.filter((e) => !(rt!.pits[`${pit.x},${pit.y}`] ?? []).includes(e))
-    delete rt.pits[`${pit.x},${pit.y}`]
-    const c = tileCentre(pit, rt.level, FLOOR_TOP - FLOOR_THICK / 2)
-    const patch = box(rt, Vector3.create(c.x, c.y - 2, c.z), Vector3.create(TILE, FLOOR_THICK, TILE), PATCH, true, { metallic: 0.1, roughness: 0.3 })
-    rt.fills.push({ entity: patch, t: 0, toY: c.y })
+    dust(s.to.x, FLOOR_TOP + 0.1, s.to.z, 10, FX_AMBER)
     stopBurst(s.to.x, FLOOR_TOP, s.to.z)
     finishSlide(s.after, false)
     return
@@ -829,7 +1015,20 @@ function finishSlide(after: GameState, bounce: boolean) {
   rt.state = after
   rt.slide = null
   rt.cooldown = PUSH_COOLDOWN
-  if (bounce) rt.bounce = { index: s.index, t: 0 }
+  if (bounce) {
+    // the way it was going when it stopped: the direction of the last leg that moved
+    let dx = 0
+    let dz = 0
+    for (let i = s.lens.length - 1; i >= 0; i--) {
+      if (s.lens[i] > 0.01) {
+        dx = (s.pts[i + 1].x - s.pts[i].x) / s.lens[i]
+        dz = (s.pts[i + 1].z - s.pts[i].z) / s.lens[i]
+        break
+      }
+    }
+    endBounce() // a previous wobble that has not finished
+    rt.bounce = { index: s.index, t: 0, dx, dz, bx: s.to.x, bz: s.to.z }
+  }
   refreshPlates(true)
   if (isSolved(rt.state) && !session.unlocked && !session.solved) {
     session.unlocked = true
