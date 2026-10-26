@@ -2,11 +2,13 @@
 // The level is edited as ASCII rows. Every valid edit rebuilds the real level in the world, so you can walk around
 // and push blocks in it while you edit. Levels leave the editor as a level code (copy it and send it for review).
 
-import { engine, InputAction, inputSystem, PointerEventType } from '@dcl/sdk/ecs'
+import { ColliderLayer, engine, Entity, InputAction, inputSystem, PointerEventType, raycastSystem, RaycastQueryType } from '@dcl/sdk/ecs'
+import { Vector3 } from '@dcl/sdk/math'
+import { mobile } from '../hud/platform'
 import { copyToClipboard } from '~system/RestrictedActions'
-import { activeLevel, buildCustom, hideCursor, loadLevel, restartLevel, returnToLobby, setCellClickHandler, setCellHoverHandler, teleportToStart, updateCursor } from './world'
+import { activeLevel, buildCustom, hideCursor, loadLevel, pickedCell, restartLevel, returnToLobby, setCellClickHandler, setCellHoverHandler, setPlaceHint, teleportToStart, updateCursor } from './world'
 import { Level, parseLevel } from './grid'
-import { Edge, fillRect, flipHorizontal, flipVertical, floodFill, growEdgeRows, rotateRight } from './editorOps'
+import { Edge, fillRect, flipHorizontal, flipVertical, growEdgeRows, rotateRight } from './editorOps'
 import { decodeLevelCode, encodeLevelCode } from './levelCode'
 import { solve } from './solver'
 import { editor, EditorTool, session } from './session'
@@ -66,7 +68,14 @@ function tryParse(): { level: Level } | { error: string } {
 function refresh() {
   const res = tryParse()
   if ('error' in res) {
-    say('bad', res.error)
+    // No rules while building: draw whatever is there (a plate with no block yet, no start, a stray exit...). The level
+    // is only checked when you press Check or Play.
+    try {
+      buildCustom(parseLevel('Custom', editor.rows, true))
+    } catch {
+      // nothing drawable: keep the last picture
+    }
+    refreshCursor()
     return
   }
   buildCustom(res.level)
@@ -85,7 +94,7 @@ export function resetBlocks() {
   refresh()
 }
 
-const PALETTE_ORDER = ['.', '#', 'W', 'O', 'F', 'E', 'P', 'S', 'B', '@', 'N', 'arrow', 'fan']
+const PALETTE_ORDER = ['.', '#', 'O', 'F', 'E', 'P', 'S', 'B', '@', 'N', 'arrow', 'fan']
 const paletteId = (t: EditorTool) => ('^>v<'.includes(t) ? 'arrow' : 'urdl'.includes(t) ? 'fan' : t)
 
 /** Move to the next (+1) or previous (-1) item in the hotbar. */
@@ -101,8 +110,8 @@ export function rotateTool() {
 }
 
 /** Erase the tile under the cursor (turn it back into plain ice). */
-export function eraseHovered() {
-  const h = editor.hover
+export function eraseHovered(at?: { x: number; y: number } | null) {
+  const h = at ?? editor.hover
   if (!h || editor.rows[h.y][h.x] === '.') return
   snapshot()
   const rows = editor.rows.map((r) => r.split(''))
@@ -120,10 +129,42 @@ function editorInputSystem() {
   if (pressed(InputAction.IA_ACTION_4)) rotateTool()
   if (pressed(InputAction.IA_ACTION_5)) undo()
   if (pressed(InputAction.IA_ACTION_6)) redo()
-  if (pressed(InputAction.IA_SECONDARY)) eraseHovered()
+  if (pressed(InputAction.IA_SECONDARY)) {
+    // the client reports which cell the erase action hit; fall back to the hovered cell
+    const hit = inputSystem.getInputCommand(InputAction.IA_SECONDARY, PointerEventType.PET_DOWN)?.hit?.entityId
+    eraseHovered(hit !== undefined ? pickedCell(hit as Entity) : null)
+  }
+}
+
+// On a phone the aim is the screen-centre crosshair, and the client does not send hover events for it. So while the editor
+// is open we cast a ray from the camera straight ahead against the tile pick colliders and take the cell it hits.
+let aimRay = false
+function aimSystem() {
+  const want = editor.open && mobile()
+  if (want && !aimRay) {
+    aimRay = true
+    raycastSystem.registerLocalDirectionRaycast(
+      {
+        entity: engine.CameraEntity,
+        opts: { direction: Vector3.Forward(), maxDistance: 160, continuous: true, queryType: RaycastQueryType.RQT_HIT_FIRST, collisionMask: ColliderLayer.CL_POINTER }
+      },
+      (result) => {
+        const id = result.hits[0]?.entityId
+        const cell = id !== undefined ? pickedCell(id as Entity) : null
+        const cur = editor.hover
+        if (cell?.x === cur?.x && cell?.y === cur?.y) return
+        editor.hover = cell
+        refreshCursor()
+      }
+    )
+  } else if (!want && aimRay) {
+    aimRay = false
+    raycastSystem.removeRaycasterEntity(engine.CameraEntity)
+  }
 }
 
 export function setupEditor() {
+  engine.addSystem(aimSystem, 4, 'sm-editor-aim')
   setCellClickHandler(paint)
   setCellHoverHandler((x, y) => {
     editor.hover = x < 0 ? null : { x, y }
@@ -154,6 +195,7 @@ export function openEditor() {
   session.codeOpen = false
   say('info', 'Pick a tile, then click the grid.')
   refresh()
+  setPlaceHint(editor.tool)
   if (fromLobby) teleportToStart() // the level floats above the lobby, so go up to it
 }
 
@@ -185,6 +227,7 @@ const FANS: EditorTool[] = ['u', 'r', 'd', 'l']
 
 export function setTool(tool: EditorTool) {
   editor.tool = tool
+  setPlaceHint(tool)
 }
 
 /** Palette click. Arrow and Fan are families: clicking one that is already selected turns it a quarter. */
@@ -192,6 +235,7 @@ export function pickTool(id: string) {
   const family = id === 'arrow' ? ARROWS : id === 'fan' ? FANS : null
   if (!family) {
     editor.tool = id as EditorTool
+    setPlaceHint(editor.tool)
     refreshCursor()
     return
   }
@@ -200,15 +244,22 @@ export function pickTool(id: string) {
   if (id === 'arrow') editor.lastArrow = next
   else editor.lastFan = next
   editor.tool = next
+  setPlaceHint(next)
   refreshCursor()
 }
 
-const MODES: ('paint' | 'fill' | 'rect')[] = ['paint', 'fill', 'rect']
+const MODES: ('paint' | 'rect')[] = ['paint', 'rect']
+
+export function setMode(mode: 'paint' | 'rect') {
+  editor.mode = mode
+  editor.anchor = null
+  say('info', mode === 'paint' ? 'Paint: one tile per click.' : 'Rectangle: click two opposite corners.')
+}
 
 export function cycleMode() {
   editor.mode = MODES[(MODES.indexOf(editor.mode) + 1) % MODES.length]
   editor.anchor = null
-  say('info', editor.mode === 'paint' ? 'Paint: one tile per click.' : editor.mode === 'fill' ? 'Fill: click a tile to fill the whole connected region.' : 'Rectangle: click two opposite corners.')
+  say('info', editor.mode === 'paint' ? 'Paint: one tile per click.' : 'Rectangle: click two opposite corners.')
 }
 
 /** Apply a whole-grid operation (flip, rotate) as one undoable step. */
@@ -232,13 +283,6 @@ export function paint(x: number, y: number) {
     snapshot()
     editor.rows = fillRect(editor.rows, editor.anchor.x, editor.anchor.y, x, y, editor.tool)
     editor.anchor = null
-    refresh()
-    return
-  }
-  if (editor.mode === 'fill' && editor.tool !== '@') {
-    if (editor.rows[y][x] === editor.tool) return
-    snapshot()
-    editor.rows = floodFill(editor.rows, x, y, editor.tool)
     refresh()
     return
   }

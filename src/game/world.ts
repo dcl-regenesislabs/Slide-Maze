@@ -1,7 +1,7 @@
 // The 3D side of the game (greybox look): spawns a level from data, detects the avatar pushing a block,
 // animates the slide, and tells the session when the level is solved. All the rules live in logic.ts.
 
-import { Animator, ColliderLayer, engine, ParticleSystem, PBParticleSystem_BlendMode, Entity, GltfContainer, InputAction, Material, MaterialTransparencyMode, MeshCollider, MeshRenderer, pointerEventsSystem, Transform } from '@dcl/sdk/ecs'
+import { Animator, ColliderLayer, engine, ParticleSystem, PBParticleSystem_BlendMode, Entity, GltfContainer, InputAction, Material, MaterialTransparencyMode, MeshCollider, MeshRenderer, PointerEvents, PointerEventType, pointerEventsSystem, Transform } from '@dcl/sdk/ecs'
 import { Color3, Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { copyToClipboard, movePlayerTo } from '~system/RestrictedActions'
 import { FX_COLORS, clearFx, confetti, dust, holeBurst, plateOn, setupFx, stopBurst, trail, windStreak } from './fx'
@@ -14,6 +14,7 @@ import { LEVELS, levelCode } from './levels'
 import { GameState, blockAt, createState, isPlateCovered, isSolved, playerCanStand, push, reachable } from './logic'
 import { solveFrom } from './solver'
 import { editor, progress, session } from './session'
+import { mobile } from '../hud/platform'
 
 // ---- Tuning (metres, seconds) ----
 const TILE = 3 // one grid tile
@@ -21,8 +22,8 @@ const ELEV = 12 // the whole level floats this many metres above the ground, so 
 const FLOOR_THICK = 0.5 // thickness of the ice slab
 const FLOOR_TOP = ELEV + FLOOR_THICK // absolute height of the ice surface
 const BLOCK_SIZE = 2.7
+const WALL_HEIGHT = 3.6 // the exit door annex's side walls
 const STEP_HEIGHT = 0.2 // a '#' tile is a ledge this far above the ice: low enough to jump onto easily
-const WALL_HEIGHT = 3.6 // a 'W' tile is a full wall
 const SLIDE_SPEED = 18 // m/s while a block slides
 const PUSH_REACH = 0.75 // how far past the block face the avatar may be and still count as touching it
 const PUSH_MIN_SPEED = 1.2 // m/s toward the block, sampled over the last PUSH_WINDOW, that counts as a deliberate push
@@ -290,6 +291,7 @@ function wallCube(r: Runtime, pos: Vector3, x: number, y: number): Entity {
 function clearLevel() {
   clearHint()
   if (!rt) return
+  pickCells.clear()
   for (const e of rt.picks) {
     pointerEventsSystem.removeOnPointerDown(e)
     pointerEventsSystem.removeOnPointerHoverEnter(e)
@@ -334,8 +336,6 @@ function buildLevel(level: Level, index: number) {
           box(r, tileCentre(p, level, FLOOR_TOP + STEP_HEIGHT + 0.03), Vector3.create(TILE * 0.7, 0.06, TILE * 0.7), DOOR_RUNE, false, { glow: 0.8, roughness: 0.4 })
           r.door = buildAnnex(r, p, level.exitSide, true)
         }
-      } else if (t === 'W') {
-        box(r, tileCentre(p, level, ELEV + WALL_HEIGHT / 2), Vector3.create(TILE, WALL_HEIGHT, TILE), WALL, true)
       } else if (FAN_DIR[t]) {
         // a wind statue (WindCube01) stands on the ice and blows out of its mouth. Its origin is on the floor, its face looks along +Z
         // at rotation 0, its looping idle animation plays all the time, and its "_collider" child is the only part that collides
@@ -467,6 +467,23 @@ function buildUnderside(r: Runtime) {
 }
 
 /** Called when a cell is clicked in the 3D view while editing. Set by editor.ts (world must not import the editor). */
+const pickCells = new Map<Entity, { x: number; y: number }>()
+export const pickedCell = (e: Entity) => pickCells.get(e) ?? null
+
+const TOOL_LABEL: Record<string, string> = { '.': 'Ice', '#': 'Step', O: 'Hole', F: 'Pit', E: 'Exit', P: 'Plate', S: 'Cube', B: 'Block', '@': 'Start', N: 'Snow', '^': 'Arrow', '>': 'Arrow', v: 'Arrow', '<': 'Arrow', u: 'Fan', r: 'Fan', d: 'Fan', l: 'Fan' }
+let placeHint = 'Place'
+/** The tooltip on every cell names the selected item; on desktop it also lists the keys. */
+export function setPlaceHint(tool: string) {
+  const name = TOOL_LABEL[tool] ?? tool
+  placeHint = mobile() ? `Place ${name}` : `Place ${name}   (F: erase,  E: next item)`
+  if (!rt) return
+  for (const e of rt.picks) {
+    const ev = PointerEvents.getMutableOrNull(e)
+    const down = ev?.pointerEvents.find((p) => p.eventType === PointerEventType.PET_DOWN && p.eventInfo?.button === InputAction.IA_POINTER)
+    if (down?.eventInfo) down.eventInfo.hoverText = placeHint
+  }
+}
+
 let cellClick: ((x: number, y: number) => void) | null = null
 export const setCellClickHandler = (fn: (x: number, y: number) => void) => (cellClick = fn)
 
@@ -486,7 +503,6 @@ export function hideCursor() {
 const GHOST: Record<string, [number, Color4]> = {
   '.': [0.12, ICE_A],
   '#': [STEP_HEIGHT, STEP],
-  W: [WALL_HEIGHT - FLOOR_THICK, WALL],
   O: [0.08, PIT],
   F: [0.14, PIT_LIP],
   E: [STEP_HEIGHT, DOOR_RUNE],
@@ -525,11 +541,19 @@ export function updateCursor(x: number, y: number, tool: string) {
     cursorEnts.push(e)
   }
   // a bright frame-like slab on the tile top, then the preview of the item standing on it
-  const top = tool === '#' || tool === 'W' ? ELEV + FLOOR_THICK : FLOOR_TOP
-  make(Vector3.create(c.x, FLOOR_TOP + 0.32, c.z), Vector3.create(TILE + 0.06, 0.06, TILE + 0.06), DOOR_RUNE, 0.55, 2.2)
+  const top = tool === '#' ? ELEV + FLOOR_THICK : FLOOR_TOP
+  // the tile you are aiming at: a low yellow frame around it (no column, no fill, so the tile stays readable)
+  const edge = 0.1
+  const eh = 0.3
+  const ey = FLOOR_TOP + eh / 2
+  make(Vector3.create(c.x, ey, c.z - TILE / 2 + edge / 2), Vector3.create(TILE, eh, edge), AIM, 1, 3)
+  make(Vector3.create(c.x, ey, c.z + TILE / 2 - edge / 2), Vector3.create(TILE, eh, edge), AIM, 1, 3)
+  make(Vector3.create(c.x - TILE / 2 + edge / 2, ey, c.z), Vector3.create(edge, eh, TILE - 2 * edge), AIM, 1, 3)
+  make(Vector3.create(c.x + TILE / 2 - edge / 2, ey, c.z), Vector3.create(edge, eh, TILE - 2 * edge), AIM, 1, 3)
   make(Vector3.create(c.x, top + h / 2, c.z), Vector3.create(TILE * 0.96, h, TILE * 0.96), color, 0.5, 0.6)
 }
 
+const AIM = Color4.create(1, 0.85, 0.2, 1) // the aimed-at tile in the editor
 const GRID_LINE = Color4.create(0.3, 0.75, 1, 1)
 
 /** Thin lines along every tile edge, so the grid you are building on is visible in the world (editor only). */
@@ -555,7 +579,6 @@ function buildPicks(r: Runtime) {
       const t = level.tiles[y][x]
       let top = FLOOR_TOP + 0.1
       if (t === '#') top = FLOOR_TOP + STEP_HEIGHT
-      else if (t === 'W') top = ELEV + WALL_HEIGHT
       else if (t === 'E') top = FLOOR_TOP + STEP_HEIGHT
       else if (t === 'S' || blockCells.has(`${x},${y}`)) top = FLOOR_TOP + BLOCK_SIZE
       else if (FAN_DIR[t]) top = FLOOR_TOP + 1.6
@@ -563,7 +586,13 @@ function buildPicks(r: Runtime) {
       const e = engine.addEntity()
       Transform.create(e, { position: Vector3.create(tileX(x, level), ELEV + h / 2, tileZ(y, level)), scale: Vector3.create(TILE, h, TILE) })
       MeshCollider.setBox(e, ColliderLayer.CL_POINTER)
-      pointerEventsSystem.onPointerDown({ entity: e, opts: { button: InputAction.IA_POINTER, hoverText: `Place   (F: erase,  E: next item)  [${x}, ${y}]`, maxDistance: 120 } }, () => cellClick?.(x, y))
+      pointerEventsSystem.onPointerDown({ entity: e, opts: { button: InputAction.IA_POINTER, hoverText: placeHint, maxDistance: 120 } }, () => cellClick?.(x, y))
+      // the erase action (F on desktop, the eraser button on a phone) is advertised on every cell, so the client sends it and we know which cell was aimed at
+      PointerEvents.getMutable(e).pointerEvents.push({
+        eventType: PointerEventType.PET_DOWN,
+        eventInfo: { button: InputAction.IA_SECONDARY, maxDistance: 120, showFeedback: false } // no second line in the hover hint
+      })
+      pickCells.set(e, { x, y })
       pointerEventsSystem.onPointerHoverEnter({ entity: e, opts: { maxDistance: 120 } }, () => cellHover?.(x, y))
       pointerEventsSystem.onPointerHoverLeave({ entity: e, opts: { maxDistance: 120 } }, () => cellHover?.(-1, -1))
       r.picks.push(e)
@@ -1178,10 +1207,23 @@ function contactDir(i: number, p: Vector3): Dir | null {
   return alongX ? (dx > 0 ? 'E' : 'W') : dz > 0 ? 'N' : 'S'
 }
 
+let editorRescueIn = 0 // cooldown so one fall teleports once
+
 function playerFallSystem(dt: number) {
   if (!rt) return
   if (editor.open) {
-    rt.resetIn = 0 // no fall resets while editing
+    rt.resetIn = 0 // no level restart while editing: just put the player back on the level
+    if (editorRescueIn > 0) editorRescueIn -= dt
+    if (editorRescueIn <= 0 && Transform.has(engine.PlayerEntity)) {
+      const p = Transform.get(engine.PlayerEntity).position
+      const l = rt.level
+      const near = Math.abs(p.x - ORIGIN.x) < (l.width * TILE) / 2 + 12 && Math.abs(p.z - ORIGIN.z) < (l.height * TILE) / 2 + 12
+      if (near && p.y < ELEV - 2.5) {
+        // painted a hole under their feet (or walked off the edge): back to the start tile
+        teleportToStart()
+        editorRescueIn = 1.5
+      }
+    }
     return
   }
   if (rt.resetIn > 0) {

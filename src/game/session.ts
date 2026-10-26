@@ -63,13 +63,13 @@ export const isUnlocked = (i: number) => DEV_UNLOCK_ALL || i === 0 || progress[i
 /** Dev switch. Later this becomes a wallet allowlist so players never see the editor. */
 export const EDITOR_ENABLED = true
 
-export type EditorTool = '.' | '#' | 'W' | 'O' | 'P' | 'S' | 'B' | '@' | 'N' | 'F' | 'E' | '^' | '>' | 'v' | '<' | 'u' | 'r' | 'd' | 'l'
+export type EditorTool = '.' | '#' | 'O' | 'P' | 'S' | 'B' | '@' | 'N' | 'F' | 'E' | '^' | '>' | 'v' | '<' | 'u' | 'r' | 'd' | 'l'
 
 export interface EditorState {
   open: boolean
   rows: string[] // the level being edited, as ASCII (see grid.ts for the legend)
   tool: EditorTool
-  mode: 'paint' | 'fill' | 'rect' // paint one tile, flood fill a region, or fill a rectangle between two clicks
+  mode: 'paint' | 'rect' // paint one tile, or fill a rectangle between two clicks
   anchor: { x: number; y: number } | null // first corner of a rectangle in progress
   panelOpen: boolean // the big "Level tools" panel (the hotbar and toolbar are always shown while editing)
   hover: { x: number; y: number } | null // the cell under the cursor in the 3D view

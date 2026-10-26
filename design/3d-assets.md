@@ -26,7 +26,7 @@ Readability rule from the GDD (the main risk): **a movable block must never be m
 |---|---|---|---|---|---|
 | A1 | **Ice floor tile** | 2-3 (two checker shades, one with light cracks) | 3 x 0.5 x 3 | 100 | Glossy, slightly bevelled edges so tile seams stay readable. Must tile with no visible repeat on a 31x31 |
 | A2 | **Step / ledge tile** (`#`) | straight, outer corner, inner corner | 3 x 0.7 x 3 (top is **0.2 m above the ice**) | 120 | The player jumps onto it and walks along it. Rocky edge, lighter than the wall so it reads as climbable |
-| A3 | **Full wall tile** (`W`) | 2-3 + corner | 3 x 3.6 x 3 | 200 | Used to build enclosed rooms. Dark rock / ice. Must look un-climbable |
+| A3 | ~~Full wall tile (`W`)~~ | merged into the cube (`S`, Wallcube01) on 2026-10-23 | - | - | No separate wall: `W` in old levels and codes loads as `S` |
 | A4 | **Movable block** | 1 (+ optional damaged / frosty states) | 2.7 cube | 250 | **Warm orange family**, friendly, "push me" shape. Clear faces on all 4 sides so the push direction reads |
 | A5 | **Static cube** | 1-2 | 2.7 cube | 250 | **Cold dark slate**, heavy, carved or runed. Different silhouette from A4 (chamfered / stepped top) |
 | A6 | **Pressure plate** | off and on states | 2.2 x 0.1 x 2.2 | 80 | Set into the ice. "On" glows green. Easiest as one mesh with an emissive channel the scene can switch |

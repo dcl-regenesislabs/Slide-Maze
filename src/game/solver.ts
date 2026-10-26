@@ -38,7 +38,7 @@ export function solveFrom(state0: GameState, player0: Pt, limit = 2_000_000): So
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const t = level.tiles[y][x]
-      if (t === 'W' || t === 'S' || t === 'O' || FAN_DIR[t] !== undefined) staticSolid[y * w + x] = 1
+      if (t === 'S' || t === 'O' || FAN_DIR[t] !== undefined) staticSolid[y * w + x] = 1
       if (t === 'F') pits.push(y * w + x)
     }
   }

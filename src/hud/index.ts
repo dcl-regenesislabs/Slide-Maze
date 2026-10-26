@@ -1,6 +1,7 @@
 import { CameraModeArea, CameraType, engine, InputAction, SkyboxTime, Transform, TouchScreenControls } from '@dcl/sdk/ecs'
 import { ReactEcsRenderer } from '@dcl/sdk/react-ecs'
 import { Hud } from './hud'
+import { editor, session } from '../game/session'
 import { Vector3 } from '@dcl/sdk/math'
 import { mobile, resolvePlatform } from './platform'
 
@@ -18,6 +19,31 @@ export function setupHud() {
     InputAction.IA_ACTION_5,
     InputAction.IA_ACTION_6
   ])
+  // The interact (hand) button and the crosshair come back wherever the player has to aim and tap: in the editor (to place
+  // tiles) and in the lobby (level terminal). They stay hidden while playing a level.
+  let aiming: boolean | null = null
+  let erasing: boolean | null = null
+  const eraserIcon = { tex: { $case: 'texture' as const, texture: { src: 'assets/images/icon-eraser.png' } } }
+  engine.addSystem(() => {
+    const want = editor.open || session.inLobby
+    if (want === aiming && editor.open === erasing) return
+    aiming = want
+    erasing = editor.open
+    // Hand = IA_POINTER (place), eraser = IA_SECONDARY (the same action as F on desktop). The joystick and Jump stay.
+    TouchScreenControls.createOrReplace(engine.RootEntity, {
+      touchInputs: [
+        { inputAction: InputAction.IA_POINTER, hide: !want },
+        { inputAction: InputAction.IA_SECONDARY, hide: !editor.open, icon: eraserIcon },
+        { inputAction: InputAction.IA_PRIMARY, hide: true },
+        { inputAction: InputAction.IA_ACTION_3, hide: true },
+        { inputAction: InputAction.IA_ACTION_4, hide: true },
+        { inputAction: InputAction.IA_ACTION_5, hide: true },
+        { inputAction: InputAction.IA_ACTION_6, hide: true }
+      ],
+      hideJoystick: false,
+      hideCrosshair: !want
+    })
+  })
   // No canvas options: the SDK picks 1920x1080 (desktop) / 1600x720 (phone) and applies the device safe-area inset.
   ReactEcsRenderer.setUiRenderer(Hud)
   // Phones play in a fixed morning sky (09:00). Applied once, as soon as the platform lookup answers.

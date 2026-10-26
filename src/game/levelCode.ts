@@ -64,5 +64,5 @@ export function decodeLevelCode(code: string): string[] {
     throw new Error(`grid does not match size ${size}`)
   }
   if (checksum(rows.join('/')) !== sum.toUpperCase()) throw new Error('checksum mismatch (typo or cut-off paste?)')
-  return rows
+  return rows.map((r) => r.replace(/W/g, 'S')) // 'W' (the old full wall) is now the cube
 }

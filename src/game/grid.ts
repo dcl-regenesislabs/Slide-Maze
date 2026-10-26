@@ -31,7 +31,7 @@ export const DIR_DELTA: Record<Dir, Pt> = {
 }
 
 // Static tiles only. Blocks and the start are separate so a tile is always one of these.
-export type Tile = '#' | 'W' | '.' | 'O' | 'P' | 'S' | 'N' | 'F' | 'E' | '^' | '>' | 'v' | '<' | 'u' | 'r' | 'd' | 'l'
+export type Tile = '#' | '.' | 'O' | 'P' | 'S' | 'N' | 'F' | 'E' | '^' | '>' | 'v' | '<' | 'u' | 'r' | 'd' | 'l'
 
 export const ARROW_DIR: Record<string, Dir> = { '^': 'N', '>': 'E', v: 'S', '<': 'W' }
 /** How many tiles a wind statue's wind reaches. */
@@ -53,9 +53,15 @@ export interface Level {
   start: Pt
 }
 
-const TILE_CHARS = '#W.OPSNFE^>v<urdl'
+const TILE_CHARS = '#.OPSNFE^>v<urdl'
 
-export function parseLevel(name: string, rows: string[]): Level {
+/**
+ * `lenient` is for the editor's live preview: a half-built level (no start yet, a plate with no block, a misplaced exit)
+ * is still drawn instead of being skipped, so what you place always appears. Never use it for a level that gets played.
+ */
+export function parseLevel(name: string, rawRows: string[], lenient = false): Level {
+  // 'W' (the old full wall) was merged into the cube: old levels and codes still load
+  const rows = rawRows.map((r) => r.replace(/W/g, 'S'))
   if (rows.length < 3) throw new Error('level needs at least 3 rows')
   const width = rows[0].length
   const tiles: Tile[][] = []
@@ -75,13 +81,18 @@ export function parseLevel(name: string, rows: string[]): Level {
         blocks.push({ x, y })
         line.push('.')
       } else if (ch === '@') {
-        if (start) throw new Error('more than one player start (@)')
-        start = { x, y }
+        if (start) {
+          if (!lenient) throw new Error('more than one player start (@)')
+        } else start = { x, y }
         line.push('.')
       } else if (TILE_CHARS.includes(ch)) {
         if (ch === 'P') plates.push({ x, y })
         if (FAN_DIR[ch]) fans.push({ x, y, dir: FAN_DIR[ch] })
         if (ch === 'E') {
+          if (lenient && (exit || (!(x === 0 || x === width - 1) && !(y === 0 || y === rows.length - 1)) || ((x === 0 || x === width - 1) && (y === 0 || y === rows.length - 1)))) {
+            line.push('E') // a misplaced exit is shown as a plain step (no door) until it is fixed
+            continue
+          }
           if (exit) throw new Error('more than one exit door (E)')
           const onX = x === 0 || x === width - 1
           const onY = y === 0 || y === rows.length - 1
@@ -98,12 +109,17 @@ export function parseLevel(name: string, rows: string[]): Level {
     tiles.push(line)
   })
 
-  if (!start) throw new Error('level has no player start (@)')
-  if (plates.length === 0) throw new Error('level has no pressure plate (P)')
-  if (blocks.length < plates.length) throw new Error(`${plates.length} plates but only ${blocks.length} blocks`)
+  if (!start) {
+    if (!lenient) throw new Error('level has no player start (@)')
+    start = { x: Math.floor(width / 2), y: Math.floor(rows.length / 2) }
+  }
+  if (!lenient) {
+    if (plates.length === 0) throw new Error('level has no pressure plate (P)')
+    if (blocks.length < plates.length) throw new Error(`${plates.length} plates but only ${blocks.length} blocks`)
+  }
 
   // wind lanes: from each fan, along the way it faces, until the first solid tile, but at most WIND_RANGE tiles
-  const solid = (t: Tile) => t === '#' || t === 'W' || t === 'S' || t === 'E' || FAN_DIR[t] !== undefined
+  const solid = (t: Tile) => t === '#' || t === 'S' || t === 'E' || FAN_DIR[t] !== undefined
   const wind: (Dir | null)[][] = tiles.map((r) => r.map(() => null))
   for (const fan of fans) {
     const d = DIR_DELTA[fan.dir]

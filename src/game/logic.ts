@@ -44,13 +44,13 @@ export const isOpenPit = (state: GameState, p: Pt) =>
   state.level.tiles[p.y][p.x] === 'F' && !state.filled.some((f) => samePt(f, p))
 
 /** Tiles that stop a sliding block (and the wind). */
-const solidForBlocks = (t: Tile) => t === '#' || t === 'W' || t === 'S' || t === 'E' || FAN_DIR[t] !== undefined
+const solidForBlocks = (t: Tile) => t === '#' || t === 'S' || t === 'E' || FAN_DIR[t] !== undefined
 
 /** Can the player stand on this tile? Steps (# and the exit step E) are fine; full walls, static cubes, fans, blocks and holes are not. */
 export function playerCanStand(state: GameState, p: Pt): boolean {
   if (!inBounds(state.level, p)) return false
   const t = state.level.tiles[p.y][p.x]
-  if (t === 'W' || t === 'S' || t === 'O' || FAN_DIR[t] !== undefined) return false
+  if (t === 'S' || t === 'O' || FAN_DIR[t] !== undefined) return false
   if (isOpenPit(state, p)) return false
   return blockAt(state, p) === -1
 }

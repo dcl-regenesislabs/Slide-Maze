@@ -91,13 +91,16 @@ const SideButtons = () => {
         pointerFilter: 'none'
       }}
     >
+      {EDITOR_ENABLED && editorAvailable() && !session.inLobby && session.levelIndex < 0 ? (
+        <PillButton id="back-to-editor" label="Back to editor" width={S(190)} height={h} accent onClick={act(openEditor)} margin={m} />
+      ) : null}
       <PillButton id="options" label={optionsOpen ? 'Close' : 'Options'} width={w} height={h} accent={!optionsOpen} danger={optionsOpen} onClick={() => (optionsOpen = !optionsOpen)} margin={m} />
       {optionsOpen ? <PillButton id="menu" label="Levels" width={w} height={h} onClick={act(toggleMenu)} margin={m} /> : null}
       {optionsOpen && !session.inLobby ? <PillButton id="lobby" label="Lobby" width={w} height={h} onClick={act(returnToLobby)} margin={m} /> : null}
       {optionsOpen && !session.inLobby && !session.unlocked ? <PillButton id="hint" label="Hint" width={w} height={h} onClick={act(showHint)} margin={m} /> : null}
       {optionsOpen && !session.inLobby ? <PillButton id="restart" label="Restart" width={w} height={h} onClick={act(restartLevel)} margin={m} /> : null}
       {optionsOpen && !session.inLobby ? <PillButton id="code" label="Level code" width={w} height={h} onClick={act(toggleCode)} margin={m} /> : null}
-      {optionsOpen && EDITOR_ENABLED && editorAvailable() ? <PillButton id="edit" label="Editor" width={w} height={h} onClick={act(openEditor)} margin={m} /> : null}
+      {optionsOpen && EDITOR_ENABLED && editorAvailable() && session.levelIndex >= 0 ? <PillButton id="edit" label="Editor" width={w} height={h} onClick={act(openEditor)} margin={m} /> : null}
     </UiEntity>
   )
 }
