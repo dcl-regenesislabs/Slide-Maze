@@ -1,12 +1,12 @@
 // The 3D side of the game (greybox look): spawns a level from data, detects the avatar pushing a block,
 // animates the slide, and tells the session when the level is solved. All the rules live in logic.ts.
 
-import { Animator, ColliderLayer, engine, ParticleSystem, PBParticleSystem_BlendMode, Entity, GltfContainer, InputAction, Material, MaterialTransparencyMode, MeshCollider, MeshRenderer, PointerEvents, PointerEventType, pointerEventsSystem, Transform } from '@dcl/sdk/ecs'
+import { Animator, ColliderLayer, engine, ParticleSystem, PBParticleSystem_BlendMode, Entity, GltfContainer, GltfNodeModifiers, InputAction, Material, MaterialTransparencyMode, MeshCollider, MeshRenderer, PointerEvents, PointerEventType, pointerEventsSystem, Transform, TriggerArea, triggerAreaEventsSystem } from '@dcl/sdk/ecs'
 import { Color3, Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { copyToClipboard, movePlayerTo } from '~system/RestrictedActions'
 import { FX_COLORS, clearFx, confetti, dust, holeBurst, plateOn, setupFx, stopBurst, trail, windStreak } from './fx'
 import { buildCave, buildLevelLights } from './cave'
-import { iceModel, slabEntity, stoneModel } from './tiles'
+import { iceModel, slabEntity, SNOW_MODELS, snowModel, stoneModel } from './tiles'
 import { buildCeiling, buildCrystals, buildWallRing, ringAround } from './wallRing'
 import { buildLobby, LOBBY_SPAWN } from './lobby'
 import { ARROW_DIR, DIRS, DIR_DELTA, Dir, FAN_DIR, Level, Pt } from './grid'
@@ -46,7 +46,6 @@ const ORIGIN = Vector3.create(64, 0, 64) // world position of the level's centre
 // ---- Look ----
 const ICE_A = Color4.create(0.72, 0.89, 0.98, 1)
 const ICE_B = Color4.create(0.64, 0.82, 0.95, 1) // alternate tiles give a faint checker so tiles stay readable
-const WALL = Color4.create(0.17, 0.22, 0.33, 1)
 const STEP = Color4.create(0.3, 0.4, 0.55, 1) // lighter than a full wall so it reads as something you can climb
 const STATIC = Color4.create(0.3, 0.36, 0.42, 1)
 const MOVABLE = Color4.create(1, 0.55, 0.15, 1) // warm orange vs the cold level, so movable never looks like static
@@ -77,6 +76,7 @@ interface Slide {
   fallT: number // seconds into the fall / sink (only once the slide has reached the hole or pit)
   burst: boolean // the hole effect has been played
   trailT: number
+  over: Set<number> // plates (by index) the block is over right now, so a pop plays once per plate
   after: GameState // state once the slide ends
 }
 
@@ -100,7 +100,7 @@ interface Runtime {
   plates: Plate[]
   fans: { x: number; z: number; fx: number; fz: number; len: number }[] // wind lanes, for the wind streaks
   spawn: Vector3 | null // where the player arrives (the entrance annex), or null = the start tile
-  door: { parts: Entity[]; baseY: number[]; open: number; target: boolean; cx: number; cz: number } | null // the exit door
+  door: DoorState | null // the exit door
   fills: { entity: Entity; t: number; toY: number }[] // floor tiles rising into filled pits
   slide: Slide | null
   bounce: { index: number; t: number; dx: number; dz: number; bx: number; bz: number } | null // dx, dz: the way the block was travelling; bx, bz: where it rests
@@ -267,8 +267,46 @@ function slideCube(r: Runtime, pos: Vector3): Entity {
   const e = engine.addEntity()
   Transform.create(e, { position: pos })
   GltfContainer.create(e, { src: 'assets/models/SlideCube01.glb', visibleMeshesCollisionMask: ColliderLayer.CL_PHYSICS })
+  setGlow(e, CUBE_BASE, CUBE_EMISSIVE, 0) // dark until it sits on a plate
+  blockGlow.set(e, { level: 0, pop: 0, shown: 0 })
   r.entities.push(e)
   return e
+}
+
+// ---- Block glow: lit while it rests on a plate, a bright pop when it slides over one ----
+const CUBE_BASE = 'assets/images/SlideCube_base.png'
+const CUBE_EMISSIVE = 'assets/images/SlideCube_emissive.png'
+const CUBE_GLOW_ON = 1.6 // emissive intensity while resting on a plate
+const CUBE_POP_PEAK = 3 // extra intensity at the top of a pop
+const CUBE_POP_TIME = 0.5 // seconds for a pop to fade
+const CUBE_GLOW_RATE = 10 // how fast the steady glow follows its target (per second)
+interface BlockGlow {
+  level: number // 0..1 steady glow
+  pop: number // 1 at the start of a pop, fades to 0
+  shown: number // the intensity last sent to the model
+}
+const blockGlow = new Map<Entity, BlockGlow>()
+
+function popBlock(e: Entity) {
+  const g = blockGlow.get(e)
+  if (g) g.pop = 1
+}
+
+function glowTick(dt: number) {
+  if (!rt) return
+  rt.blocks.forEach((e, i) => {
+    const g = blockGlow.get(e)
+    if (!g) return
+    const resting = !(rt!.slide && rt!.slide.index === i)
+    const target = resting && rt!.plates.some((p) => blockAt(rt!.state, p.pt) === i) ? 1 : 0
+    g.level += (target - g.level) * Math.min(1, dt * CUBE_GLOW_RATE)
+    g.pop = Math.max(0, g.pop - dt / CUBE_POP_TIME)
+    const intensity = CUBE_GLOW_ON * g.level + CUBE_POP_PEAK * g.pop * g.pop
+    if (Math.abs(intensity - g.shown) > 0.02 || (intensity === 0 && g.shown !== 0)) {
+      g.shown = intensity
+      setGlow(e, CUBE_BASE, CUBE_EMISSIVE, intensity)
+    }
+  })
 }
 
 // A static cube ('S'): the WallCube model. Its origin is on the floor (the ice surface), and its "_collider" child is the
@@ -292,12 +330,14 @@ function clearLevel() {
   clearHint()
   if (!rt) return
   pickCells.clear()
+  blockGlow.clear()
   for (const e of rt.picks) {
     pointerEventsSystem.removeOnPointerDown(e)
     pointerEventsSystem.removeOnPointerHoverEnter(e)
     pointerEventsSystem.removeOnPointerHoverLeave(e)
     engine.removeEntity(e)
   }
+  if (rt.door?.zone) triggerAreaEventsSystem.removeOnTriggerEnter(rt.door.zone)
   for (const e of rt.entities) engine.removeEntity(e)
   rt = null
 }
@@ -332,8 +372,7 @@ function buildLevel(level: Level, index: number) {
         const h = FLOOR_THICK + STEP_HEIGHT
         stoneTile(r, tileCentre(p, level, ELEV + h / 2), x, y)
         if (t === 'E' && level.exitSide) {
-          // the exit step: a walkable ledge with a glowing threshold. The door itself stands outside the square.
-          box(r, tileCentre(p, level, FLOOR_TOP + STEP_HEIGHT + 0.03), Vector3.create(TILE * 0.7, 0.06, TILE * 0.7), DOOR_RUNE, false, { glow: 0.8, roughness: 0.4 })
+          // the exit step is a plain stone ledge; the door stands in the gateway outside the square
           r.door = buildAnnex(r, p, level.exitSide, true)
         }
       } else if (FAN_DIR[t]) {
@@ -359,11 +398,9 @@ function buildLevel(level: Level, index: number) {
       } else {
         iceTile(r, tileCentre(p, level, FLOOR_TOP - FLOOR_THICK / 2), x, y)
         if (t === 'N') {
-          // snow patch: a matte white drift with a few lumps, so it reads as "grippy" against the glossy ice
-          box(r, tileCentre(p, level, FLOOR_TOP + 0.06), Vector3.create(TILE * 0.9, 0.12, TILE * 0.9), SNOW, false, { roughness: 1 })
-          for (const [ox, oz, s] of [[-0.6, -0.5, 0.5], [0.5, 0.4, 0.6], [0.1, -0.7, 0.35], [-0.4, 0.6, 0.4]]) {
-            box(r, Vector3.create(tileX(x, level) + ox, FLOOR_TOP + 0.14, tileZ(y, level) + oz), Vector3.create(s, 0.2, s), SNOW, false, { roughness: 1 })
-          }
+          // snow mound (Snow01-03): sits on the ice tile with the same centre, one of three picked and turned from the tile's hash
+          const snow = slabEntity(tileCentre(p, level, FLOOR_TOP - FLOOR_THICK / 2), x, y, active.index + 101, snowModel, SNOW_MODELS, false)
+          r.entities.push(snow)
         } else if (ARROW_DIR[t]) {
           const d = DIR_DELTA[ARROW_DIR[t]]
           arrowPlate(r, tileCentre(p, level, FLOOR_TOP - FLOOR_THICK / 2), d.x, -d.y)
@@ -666,16 +703,23 @@ function plateTick(dt: number) {
 /** While a block slides: a plate presses as the block enters its tile and releases as it leaves, so a block that only passes over plays both. */
 function updatePlatesUnder(pos: Vector3, blockIndex: number) {
   if (!rt) return
-  for (const p of rt.plates) {
-    const c = tileCentre(p.pt, rt.level, 0)
+  rt.plates.forEach((p, k) => {
+    const c = tileCentre(p.pt, rt!.level, 0)
     const inside = Math.abs(pos.x - c.x) < TILE / 2 && Math.abs(pos.z - c.z) < TILE / 2
-    const other = blockAt(rt.state, p.pt) // a block resting here keeps it pressed (the sliding one is still in the state at its start)
+    const over = rt!.slide?.over
+    if (over) {
+      if (inside && !over.has(k)) {
+        over.add(k)
+        popBlock(rt!.blocks[blockIndex])
+      } else if (!inside) over.delete(k)
+    }
+    const other = blockAt(rt!.state, p.pt) // a block resting here keeps it pressed (the sliding one is still in the state at its start)
     const held = other !== -1 && other !== blockIndex
     if (inside || held) {
       if (!p.vis) pressPlate(p)
       else p.pending = false
     } else releasePlate(p)
-  }
+  })
 }
 
 /** Sync the plates with the rules: `fx` plays the burst for plates that just became covered. */
@@ -695,59 +739,123 @@ function refreshPlates(fx: boolean) {
 }
 
 // ---- Gateways ----
-/** Two posts and a lintel standing on `baseY`, framing an opening that spans x or z. */
-function archFrame(r: Runtime, c: Vector3, spansX: boolean, baseY: number) {
-  const at = (lat: number, y: number) => Vector3.create(c.x + (spansX ? lat : 0), y, c.z + (spansX ? 0 : lat))
-  const sz = (lat: number, h: number, thick: number) => (spansX ? Vector3.create(lat, h, thick) : Vector3.create(thick, h, lat))
-  for (const side of [-1, 1]) box(r, at(side * (TILE / 2 - 0.3), baseY + 1.9), sz(0.6, 3.8, 0.7), WALL, true) // posts
-  box(r, at(0, baseY + 3.5), sz(TILE, 0.6, 0.7), WALL, true) // lintel
-  box(r, at(0, baseY + 3.15), sz(TILE - 1.2, 0.1, 0.5), DOOR_RUNE, false, { glow: 0.9, roughness: 0.4 }) // rune strip under the lintel
-}
-
 // the annex floor is a stone tile, the same thickness (and so height) as the '#' ledge it joins
 const ANNEX_THICK = FLOOR_THICK + STEP_HEIGHT
 const ANNEX_TOP = ELEV + ANNEX_THICK
 
 const SIDE_VEC: Record<Dir, { x: number; z: number }> = { N: { x: 0, z: 1 }, S: { x: 0, z: -1 }, E: { x: 1, z: 0 }, W: { x: -1, z: 0 } }
 
+const ENTRANCE_MODEL = 'assets/models/EntranceDoor.glb'
+const EXIT_MODEL = 'assets/models/ExitDoor.glb'
+const ENTRANCE_STEP = 0.27 // height of the step across the entrance model's opening (from its geometry)
+const DOOR_FACE_YAW = 0 // extra turn of both door models (degrees); set 180 if the carved face looks out of the level instead of into it
+const DOOR_GLOW_ON = 1.6 // emissive intensity of the exit door's runes once it is unlocked
+const DOOR_GLOW_TIME = 0.8 // seconds for the runes to light up
+const DOOR_WAIT = 1 // pause between the runes lighting and the doors opening
+const DOOR_OPEN_TIME = 1 // length of the DoorOpen clip in ExitDoor.glb
+
+/** The exit door: dark runes and shut until the level is solved, then runes up, a pause, then the DoorOpen clip. */
+type DoorState = { entity: Entity; gate: Entity; zone: Entity | null; target: boolean; t: number; started: boolean; open: number; cx: number; cz: number }
+
 /**
- * A short corridor attached to the OUTSIDE of the level's border at `borderPt`, facing `side`: a floor tile, two side
- * walls and an arch at the far end. With `withDoor` the arch is closed by two leaves (the exit); without, it is open
- * (the entrance). Being outside the square, it is not part of the puzzle grid.
+ * An invisible box collider, for what the door models do not cover: the shut doors, the open edges of the gateway. `lat` runs
+ * across the opening and `along` away from the level; `up` is the height above the annex floor.
  */
-function buildAnnex(r: Runtime, borderPt: Pt, side: Dir, withDoor: boolean): NonNullable<Runtime['door']> {
+function blocker(r: Runtime, c: Vector3, o: { x: number; z: number }, lat: number, along: number, up: number, width: number, height: number, thick: number): Entity {
+  const spansX = o.z !== 0
+  const e = engine.addEntity()
+  Transform.create(e, {
+    position: Vector3.create(c.x + (spansX ? lat : 0) + o.x * along, ANNEX_TOP + up, c.z + (spansX ? 0 : lat) + o.z * along),
+    scale: spansX ? Vector3.create(width, height, thick) : Vector3.create(thick, height, width)
+  })
+  MeshCollider.setBox(e, ColliderLayer.CL_PHYSICS)
+  r.entities.push(e)
+  return e
+}
+
+/** Re-skin a model with its own base and emissive textures so the glow strength can be set from code (0 = dark). */
+function setGlow(e: Entity, base: string, emissive: string, intensity: number) {
+  GltfNodeModifiers.createOrReplace(e, {
+    modifiers: [
+      {
+        path: '',
+        material: {
+          material: {
+            $case: 'pbr',
+            pbr: {
+              albedoColor: Color4.White(),
+              texture: Material.Texture.Common({ src: base }),
+              emissiveTexture: Material.Texture.Common({ src: emissive }),
+              emissiveColor: Color3.White(),
+              emissiveIntensity: intensity,
+              metallic: 0,
+              roughness: 1
+            }
+          }
+        }
+      }
+    ]
+  })
+}
+
+const exitGlow = (e: Entity, intensity: number) => setGlow(e, 'assets/images/ExitDoor_base.png', 'assets/images/ExitDoor_emissive.png', intensity)
+
+/**
+ * A gateway attached to the OUTSIDE of the level's border at `borderPt`, facing `side`: three stone tiles wide (the door models
+ * are about 2.3 tiles across), the middle one lined up with the border step, with a door model at the far end. With `withDoor`
+ * it is the exit (ExitDoor.glb, shut until the level is solved); without, the broken entrance (EntranceDoor.glb). Being outside
+ * the square, it is not part of the puzzle grid.
+ */
+function buildAnnex(r: Runtime, borderPt: Pt, side: Dir, withDoor: boolean): DoorState {
   const level = r.level
   const o = SIDE_VEC[side]
   const bc = tileCentre(borderPt, level, 0)
   const cx = bc.x + o.x * TILE
   const cz = bc.z + o.z * TILE
   const spansX = o.z !== 0 // the opening faces along z, so it spans x
-  stoneTile(r, Vector3.create(cx, ELEV + ANNEX_THICK / 2, cz), borderPt.x + o.x + 17, borderPt.y - o.z + 31)
-  box(r, Vector3.create(cx, ELEV - 1.4, cz), Vector3.create(TILE * 0.9, 2.2, TILE * 0.9), ISLAND, false, { roughness: 0.95 })
-  // side walls, from the border inwards to the arch
-  for (const lat of [-(TILE / 2 - 0.3), TILE / 2 - 0.3]) {
-    const len = TILE - 0.7
-    const mx = cx - o.x * 0.35 + (spansX ? lat : 0)
-    const mz = cz - o.z * 0.35 + (spansX ? 0 : lat)
-    box(r, Vector3.create(mx, ELEV + WALL_HEIGHT / 2, mz), spansX ? Vector3.create(0.6, WALL_HEIGHT, len) : Vector3.create(len, WALL_HEIGHT, 0.6), WALL, true)
+  const lateral = (lat: number) => Vector3.create(cx + (spansX ? lat : 0), 0, cz + (spansX ? 0 : lat))
+  // a T of four stone tiles: a row of three along the border, and one more straight out past the door so the player walks through onto floor
+  const tiles = [-1, 0, 1].map((k) => lateral(k * TILE))
+  tiles.push(Vector3.create(cx + o.x * TILE, 0, cz + o.z * TILE))
+  tiles.forEach((c, i) => {
+    stoneTile(r, Vector3.create(c.x, ELEV + ANNEX_THICK / 2, c.z), borderPt.x + o.x + 17 + i, borderPt.y - o.z + 31 + i)
+  })
+  box(r, Vector3.create(cx, ELEV - 1.4, cz), spansX ? Vector3.create(TILE * 2.7, 2.2, TILE * 0.9) : Vector3.create(TILE * 0.9, 2.2, TILE * 2.7), ISLAND, false, { roughness: 0.95 })
+  box(r, Vector3.create(cx + o.x * TILE, ELEV - 1.4, cz + o.z * TILE), Vector3.create(TILE * 0.9, 2.2, TILE * 0.9), ISLAND, false, { roughness: 0.95 })
+  // invisible walls round the T so nobody walks off it (the door models are the only visible parts)
+  const c0 = Vector3.create(cx, 0, cz)
+  const wall = (lat: number, along: number, width: number, thick: number) => blocker(r, c0, o, lat, along, WALL_HEIGHT / 2, width, WALL_HEIGHT, thick)
+  for (const sgn of [-1, 1]) {
+    wall(sgn * (TILE * 1.5 - 0.3), -0.35, 0.6, TILE - 0.7) // the two ends of the row
+    wall(sgn * TILE * 1.0, TILE / 2 - 0.3, TILE, 0.6) // the outer edge of the row either side of the door
+    wall(sgn * (TILE / 2 - 0.3), TILE, 0.6, TILE) // the two sides of the tile past the door
   }
-  const edge = Vector3.create(cx + o.x * (TILE / 2 - 0.35), 0, cz + o.z * (TILE / 2 - 0.35))
-  archFrame(r, edge, spansX, ANNEX_TOP)
-  const parts: Entity[] = []
-  const baseY: number[] = []
+  wall(0, TILE * 1.5 - 0.3, TILE, 0.6) // the far end of that tile
+  // the door model stands in the middle of the middle tile (both models are symmetrical around their origin), its +Z face looking into the level
+  const edge = Vector3.create(cx, ANNEX_TOP, cz)
+  const e = engine.addEntity()
+  Transform.create(e, { position: edge, rotation: Quaternion.fromEulerDegrees(0, (Math.atan2(-o.x, -o.z) * 180) / Math.PI + DOOR_FACE_YAW, 0) })
+  // the colliders are in the models (ExitDoor_collider is the frame without the two leaves, EntranceDoor_collider the whole shape)
+  GltfContainer.create(e, { src: withDoor ? EXIT_MODEL : ENTRANCE_MODEL, visibleMeshesCollisionMask: 0, invisibleMeshesCollisionMask: ColliderLayer.CL_PHYSICS })
+  r.entities.push(e)
+  let gate = e
+  let zone: Entity | null = null
   if (withDoor) {
-    const at = (lat: number, y: number) => Vector3.create(edge.x + (spansX ? lat : 0), y, edge.z + (spansX ? 0 : lat))
-    const sz = (lat: number, h: number, thick: number) => (spansX ? Vector3.create(lat, h, thick) : Vector3.create(thick, h, lat))
-    for (const side2 of [-1, 1]) {
-      const leafY = ANNEX_TOP + 1.6
-      parts.push(box(r, at(side2 * (TILE / 4 - 0.02), leafY), sz(TILE / 2 - 0.3, 3.2, 0.5), DOOR_LEAF, true, { roughness: 0.6 }))
-      baseY.push(leafY)
-      // a dim rune bar across each leaf; it is what lights up on the real art
-      parts.push(box(r, at(side2 * (TILE / 4 - 0.02), leafY + 0.4), sz(TILE / 2 - 0.9, 0.14, 0.56), DOOR_RUNE, false, { glow: 0.25, roughness: 0.4 }))
-      baseY.push(leafY + 0.4)
-    }
+    exitGlow(e, 0) // dark and dim until unlocked
+    // held on its first frame (closed) with speed 0, as the plates do: an Animator that is not playing can show the open pose
+    Animator.create(e, { states: [{ clip: 'DoorOpen', playing: true, loop: false, speed: 0, shouldReset: true }] })
+    gate = blocker(r, edge, o, 0, 0, 2.75, 3, 5.5, 0.6) // the shut doors (the leaves move, a model collider would not); taken away once they have swung open
+    // the trigger: the tile past the door. Walking onto it after the doors are open finishes the level
+    zone = engine.addEntity()
+    Transform.create(zone, { position: Vector3.create(cx + o.x * TILE, ANNEX_TOP + 1.5, cz + o.z * TILE), scale: Vector3.create(TILE * 0.8, 3, TILE * 0.8) })
+    TriggerArea.setBox(zone, ColliderLayer.CL_PLAYER)
+    r.entities.push(zone)
+    triggerAreaEventsSystem.onTriggerEnter(zone, (result) => {
+      if (result.trigger?.entity !== engine.PlayerEntity) return
+      if (rt?.door && rt.door.open >= 1 && session.unlocked && !session.solved) completeLevel()
+    })
   }
-  return { parts, baseY, open: 0, target: false, cx, cz }
+  return { entity: e, gate, zone, target: false, t: 0, started: false, open: 0, cx, cz }
 }
 
 /** The border side a border tile is on, as the direction pointing out of the square. */
@@ -771,7 +879,7 @@ function buildEntrance(r: Runtime) {
   for (const o of options) {
     if (l.tiles[o.y][o.x] !== '#' || !reach.has(o.y * l.width + o.x)) continue // a step you can actually walk onto
     const annex = buildAnnex(r, { x: o.x, y: o.y }, outwardSide(l, o), false)
-    r.spawn = Vector3.create(annex.cx, ANNEX_TOP + 0.1, annex.cz)
+    r.spawn = Vector3.create(annex.cx, ANNEX_TOP + ENTRANCE_STEP + 0.1, annex.cz) // on top of the model's step, not beside it
     return
   }
 }
@@ -919,6 +1027,7 @@ function startPush(index: number, dir: Dir) {
     fallT: 0,
     burst: false,
     trailT: 0,
+    over: new Set(rt.plates.flatMap((p, k) => (blockAt(rt!.state, p.pt) === index ? [k] : []))), // it starts on these: no pop for them
     after: res.state
   }
   dust(from.x, FLOOR_TOP + 0.1, from.z, 5)
@@ -945,6 +1054,7 @@ function endBounce() {
 function slideSystem(dt: number) {
   if (!rt) return
   plateTick(dt)
+  glowTick(dt)
 
   // landing: the block is squashed along the way it was travelling, its landing side stays put and it bulges a little across and up,
   // then it springs back with a small overshoot (a damped wobble)
@@ -1115,19 +1225,23 @@ function fmtTime(ms: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}.${t % 10}`
 }
 
-/** Animates the door and finishes the level when the player walks into the open doorway. */
+/** Runs the exit door's unlock: runes light up, a short pause, the doors open; then the trigger tile past it (see buildAnnex) finishes the level. */
 function doorSystem(dt: number) {
   const d = rt?.door
   if (!rt || !d) return
-  if (d.target && d.open < 1) d.open = Math.min(1, d.open + dt / 0.9)
-  const k = 1 - (1 - d.open) * (1 - d.open) // ease-out
-  d.parts.forEach((e, i) => {
-    const tr = Transform.getMutable(e)
-    tr.position = Vector3.create(tr.position.x, d.baseY[i] - 3.6 * k, tr.position.z)
-  })
-  if (d.open >= 1 && session.unlocked && !session.solved && Transform.has(engine.PlayerEntity)) {
-    const p = Transform.get(engine.PlayerEntity).position
-    if (Math.abs(p.x - d.cx) < TILE / 2 && Math.abs(p.z - d.cz) < TILE / 2 && p.y > ELEV - 1 && p.y < ELEV + 5) completeLevel()
+  if (d.target) {
+    const before = d.t
+    d.t += dt
+    if (before < DOOR_GLOW_TIME) exitGlow(d.entity, DOOR_GLOW_ON * Math.min(1, d.t / DOOR_GLOW_TIME))
+    const openAt = DOOR_GLOW_TIME + DOOR_WAIT
+    if (!d.started && d.t >= openAt) {
+      d.started = true
+      const st = Animator.getMutable(d.entity).states[0]
+      st.speed = 1
+      st.shouldReset = true
+    }
+    d.open = Math.max(0, Math.min(1, (d.t - openAt) / DOOR_OPEN_TIME))
+    if (d.open >= 0.5 && MeshCollider.has(d.gate)) MeshCollider.deleteFrom(d.gate) // the doors are wide enough apart now
   }
 }
 
