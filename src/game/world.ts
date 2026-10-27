@@ -1,9 +1,9 @@
 // The 3D side of the game (greybox look): spawns a level from data, detects the avatar pushing a block,
 // animates the slide, and tells the session when the level is solved. All the rules live in logic.ts.
 
-import { Animator, ColliderLayer, engine, ParticleSystem, PBParticleSystem_BlendMode, Entity, GltfContainer, GltfNodeModifiers, InputAction, Material, MaterialTransparencyMode, MeshCollider, MeshRenderer, PointerEvents, PointerEventType, pointerEventsSystem, Transform, TriggerArea, triggerAreaEventsSystem } from '@dcl/sdk/ecs'
+import { Animator, ColliderLayer, engine, ParticleSystem, PBParticleSystem_BlendMode, Entity, GltfContainer, GltfNodeModifiers, InputAction, InputModifier, Material, MaterialTransparencyMode, MeshCollider, MeshRenderer, PointerEvents, PointerEventType, pointerEventsSystem, Transform, TriggerArea, triggerAreaEventsSystem } from '@dcl/sdk/ecs'
 import { Color3, Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
-import { copyToClipboard, movePlayerTo } from '~system/RestrictedActions'
+import { copyToClipboard, movePlayerTo, stopEmote, triggerSceneEmote } from '~system/RestrictedActions'
 import { FX_COLORS, clearFx, confetti, dust, holeBurst, plateOn, setupFx, stopBurst, trail, windStreak } from './fx'
 import { buildCave, buildLevelLights } from './cave'
 import { iceModel, slabEntity, SNOW_MODELS, snowModel, stoneModel } from './tiles'
@@ -28,7 +28,7 @@ const SLIDE_SPEED = 18 // m/s while a block slides
 const PUSH_REACH = 0.75 // how far past the block face the avatar may be and still count as touching it
 const PUSH_MIN_SPEED = 1.2 // m/s toward the block, sampled over the last PUSH_WINDOW, that counts as a deliberate push
 const PUSH_WINDOW = 0.3
-const PUSH_WINDUP = 0.6 // seconds the avatar must keep pressing against the face before the block starts to slide
+const PUSH_WINDUP = 0.35 // seconds the avatar must keep pressing against the face before the block starts to slide
 const PUSH_COOLDOWN = 0.25 // pause after a slide ends before the next push can start
 const FALL_RESET_DELAY = 0.7
 const FILL_TIME = 0.45 // seconds for a block to drop into a fillable pit
@@ -111,7 +111,6 @@ interface Runtime {
 let rt: Runtime | null = null
 let active: { level: Level; index: number } = { level: LEVELS[0], index: 0 } // index -1 = a custom (editor) level
 let clock = 0
-let dustT = 0
 const samples: { t: number; vx: number; vz: number }[] = []
 let prevPlayer: Vector3 | null = null
 
@@ -127,7 +126,32 @@ export const pushEffort: { active: boolean; progress: number; dir: Dir; blockInd
   blockIndex: -1,
   lastEvent: ''
 }
+let dustT = 0
 let charge: { index: number; dir: Dir; t: number } | null = null
+
+// ---- Shoulder-push emote ----
+const PUSH_EMOTE = 'assets/Animations/ShoulderPushFast_emote.glb' // original retimed 1.6x; exact on-disk path, case included
+const PUSH_EMOTE_LEN = 1.06 // clip length in seconds: 0.76 push + 0.3 eased blend into the rig's idle (Starting_Pose)
+const PUSH_UNLOCK_EARLY = 0 // give control back this long before the clip ends, so locomotion takes over while the emote is still finishing
+let pushEmoteFrozen = false // the InputModifier is on: walking into the block would otherwise cancel the emote
+let pushEmoteLeft = 0 // seconds until the clip is over and control is given back
+
+function startPushEmote() {
+  if (pushEmoteFrozen) return
+  pushEmoteFrozen = true
+  pushEmoteLeft = PUSH_EMOTE_LEN - PUSH_UNLOCK_EARLY
+  InputModifier.createOrReplace(engine.PlayerEntity, { mode: InputModifier.Mode.Standard({ disableAll: true }) })
+  void triggerSceneEmote({ src: PUSH_EMOTE, loop: false })
+}
+
+/** Give control back; with `cut` the clip is stopped too (level change), otherwise it has finished by itself. */
+function endPushEmote(cut: boolean) {
+  if (!pushEmoteFrozen) return
+  pushEmoteFrozen = false
+  pushEmoteLeft = 0
+  InputModifier.deleteFrom(engine.PlayerEntity)
+  if (cut) void stopEmote({})
+}
 
 function endCharge(event: 'slide' | 'cancel') {
   charge = null
@@ -328,6 +352,7 @@ function wallCube(r: Runtime, pos: Vector3, x: number, y: number): Entity {
 
 function clearLevel() {
   clearHint()
+  endPushEmote(true)
   if (!rt) return
   pickCells.clear()
   blockGlow.clear()
@@ -928,7 +953,10 @@ export function showHint() {
     hintEnts.push(e)
   }
   mark(tileCentre(step.block, l, FLOOR_TOP + BLOCK_SIZE + 1.3), Vector3.create(0.9, 0.9, 0.9)) // above the block to push
-  mark(tileCentre({ x: step.block.x - d.x, y: step.block.y - d.y }, l, FLOOR_TOP + 0.06), Vector3.create(2.6, 0.06, 2.6)) // where to stand
+  const stand = { x: step.block.x - d.x, y: step.block.y - d.y }
+  const st = l.tiles[stand.y]?.[stand.x]
+  const lift = st === '#' || st === 'E' ? STEP_HEIGHT : 0 // stone ledges are raised: the ring would sink into them
+  mark(tileCentre(stand, l, FLOOR_TOP + 0.06 + lift), Vector3.create(2.6, 0.06, 2.6)) // where to stand
   say(`Hint: stand on the ring and push the marked block. ${sol.pushes} ${sol.pushes === 1 ? 'push' : 'pushes'} to go.`)
 }
 
@@ -1247,6 +1275,10 @@ function doorSystem(dt: number) {
 
 function pushSystem(dt: number) {
   clock += dt
+  if (pushEmoteFrozen) {
+    pushEmoteLeft -= dt
+    if (pushEmoteLeft <= 0) endPushEmote(false)
+  }
   if (!Transform.has(engine.PlayerEntity)) return
   const p = Transform.get(engine.PlayerEntity).position
 
@@ -1263,7 +1295,6 @@ function pushSystem(dt: number) {
     if (charge) endCharge('cancel')
     return
   }
-
   // Already leaning on a block: keep going while the avatar stays against the same face, else cancel.
   if (charge) {
     if (contactDir(charge.index, p) !== charge.dir) {
@@ -1297,6 +1328,7 @@ function pushSystem(dt: number) {
     for (const s of samples) best = Math.max(best, s.vx * wx + s.vz * wz)
     if (best >= PUSH_MIN_SPEED) {
       charge = { index: i, dir, t: 0 }
+      startPushEmote()
       pushEffort.active = true
       pushEffort.progress = 0
       pushEffort.dir = dir
