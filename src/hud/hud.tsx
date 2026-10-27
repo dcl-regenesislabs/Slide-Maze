@@ -1,12 +1,13 @@
 import ReactEcs, { Label, UiEntity } from '@dcl/sdk/react-ecs'
 import { copyLevelCode, hasNextLevel, loadLevel, nextLevel, restartLevel, returnToLobby, showHint, toggleCode, toggleMenu } from '../game/world'
 import { LEVELS } from '../game/levels'
+import { music, setMusicVolume, setSfxVolume, sfx, soundPanel, toggleMusicMute, toggleMute } from '../game/sfx'
 import { openEditor } from '../game/editor'
 import { closeMyLevels, deleteMyLevel, loadMyLevel, myLevels, openMyLevels } from '../game/levelStore'
 import { EDITOR_ENABLED, editor, elapsedMs, isUnlocked, progress, session } from '../game/session'
 import { EditorUI, editorAvailable } from './editorPanel'
 import { Color4 } from '@dcl/sdk/math'
-import { Card, FS, OutlineLabel, PAL, PillButton, S, hover, isHovered, popFactor, popPress } from './theme'
+import { Card, FS, OutlineLabel, PAL, PillButton, S, hover, isHovered, lighten, popFactor, popPress } from './theme'
 
 const hexBad = Color4.create(1, 0.54, 0.48, 1)
 
@@ -76,6 +77,84 @@ const act = (fn: () => void) => () => {
   fn()
 }
 
+/** Round speaker button (same icons as the other scenes' sound button): opens the sound panel; red when effects are muted. */
+const SoundButton = (props: { size: number; margin?: { bottom?: number; right?: number } }) => {
+  const id = 'sound'
+  const hov = isHovered(id)
+  const k = popFactor(id, 0.08)
+  const size = Math.round(props.size * k)
+  const border = Math.max(2, S(3))
+  return (
+    <UiEntity
+      uiTransform={{ width: size, height: size, margin: props.margin, padding: border, borderRadius: size / 2, pointerFilter: 'block' }}
+      uiBackground={{ color: sfx.muted ? PAL.bad : hov ? lighten(PAL.rimDim, 0.15) : PAL.rimDim }}
+      onMouseDown={() => {
+        popPress(id)
+        soundPanel.open = !soundPanel.open
+      }}
+      {...hover(id)}
+    >
+      <UiEntity
+        uiTransform={{ width: '100%', height: '100%', borderRadius: size / 2 - border, pointerFilter: 'none' }}
+        uiBackground={{
+          color: sfx.muted ? PAL.badDark : PAL.panelHi,
+          texture: { src: sfx.muted ? 'assets/images/SoundOff.png' : 'assets/images/SoundOn.png' },
+          textureMode: 'stretch'
+        }}
+      />
+    </UiEntity>
+  )
+}
+
+const VOLUME_STEPS = [0, 25, 50, 75, 100]
+
+/** One row of the sound panel: a title with its mute button, then the volume steps. */
+const VolumeSection = (props: { id: string; title: string; width: number; volume: number; muted: boolean; onVolume: (v: number) => void; onMute: () => void }) => {
+  const muted = props.muted || props.volume <= 0
+  const pct = props.volume * 100
+  const active = VOLUME_STEPS.reduce((best, v) => (Math.abs(v - pct) < Math.abs(best - pct) ? v : best))
+  const gap = S(8)
+  const stepW = Math.round((props.width - gap * (VOLUME_STEPS.length - 1)) / VOLUME_STEPS.length)
+  return (
+    <UiEntity uiTransform={{ width: props.width, flexDirection: 'column', margin: { top: S(14) }, pointerFilter: 'none' }}>
+      <UiEntity uiTransform={{ width: '100%', height: S(42), flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', pointerFilter: 'none' }}>
+        <OutlineLabel value={props.title} fontSize={FS(22)} color={PAL.text} width={S(180)} height={S(30)} />
+        <PillButton id={`${props.id}-mute`} label={muted ? 'Unmute' : 'Mute'} width={S(120)} height={S(38)} danger={muted} onClick={props.onMute} />
+      </UiEntity>
+      <UiEntity uiTransform={{ width: '100%', height: S(46), flexDirection: 'row', margin: { top: S(6) }, pointerFilter: 'none' }}>
+        {VOLUME_STEPS.map((v, i) => (
+          <PillButton
+            id={`${props.id}-${v}`}
+            label={`${v}%`}
+            width={stepW}
+            height={S(42)}
+            accent={!muted && v === active}
+            onClick={() => props.onVolume(v / 100)}
+            margin={{ left: i === 0 ? 0 : gap }}
+          />
+        ))}
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+const SoundPanel = () => {
+  const w = S(520)
+  const h = S(380)
+  return (
+    <UiEntity
+      uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}
+    >
+      <Card width={w} height={h} dir="column" align="center" block>
+        <OutlineLabel value="Sound" fontSize={FS(28)} color={PAL.amber} width="100%" height={S(40)} />
+        <VolumeSection id="music" title="Music" width={w - S(48)} volume={music.volume} muted={music.muted} onVolume={setMusicVolume} onMute={toggleMusicMute} />
+        <VolumeSection id="sfx" title="Effects" width={w - S(48)} volume={sfx.volume} muted={sfx.muted} onVolume={setSfxVolume} onMute={toggleMute} />
+        <PillButton id="close-sound" danger label="Close" width={S(140)} height={S(44)} margin={{ top: S(16) }} onClick={() => (soundPanel.open = false)} />
+      </Card>
+    </UiEntity>
+  )
+}
+
 const SideButtons = () => {
   const w = S(150)
   const h = S(42)
@@ -94,7 +173,10 @@ const SideButtons = () => {
       {EDITOR_ENABLED && editorAvailable() && !session.inLobby && session.levelIndex < 0 ? (
         <PillButton id="back-to-editor" label="Back to editor" width={S(190)} height={h} accent onClick={act(openEditor)} margin={m} />
       ) : null}
-      <PillButton id="options" label={optionsOpen ? 'Close' : 'Options'} width={w} height={h} accent={!optionsOpen} danger={optionsOpen} onClick={() => (optionsOpen = !optionsOpen)} margin={m} />
+      <UiEntity uiTransform={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', pointerFilter: 'none' }}>
+        <SoundButton size={h} margin={{ right: S(8), bottom: S(6) }} />
+        <PillButton id="options" label={optionsOpen ? 'Close' : 'Options'} width={w} height={h} accent={!optionsOpen} danger={optionsOpen} onClick={() => (optionsOpen = !optionsOpen)} margin={m} />
+      </UiEntity>
       {optionsOpen ? <PillButton id="menu" label="Levels" width={w} height={h} onClick={act(toggleMenu)} margin={m} /> : null}
       {optionsOpen && !session.inLobby ? <PillButton id="lobby" label="Lobby" width={w} height={h} onClick={act(returnToLobby)} margin={m} /> : null}
       {optionsOpen && !session.inLobby && !session.unlocked ? <PillButton id="hint" label="Hint" width={w} height={h} onClick={act(showHint)} margin={m} /> : null}
@@ -417,6 +499,7 @@ export const Hud = () => {
       {!editor.open && <SideButtons />}
       {session.inLobby && !editor.open && !session.menuOpen && !myLevels.panelOpen && <PlayButton />}
       {session.codeOpen && <CodePanel />}
+      {soundPanel.open && <SoundPanel />}
       {session.menuOpen && <LevelMenu />}
       {Date.now() < session.hintUntil && !session.inLobby && <HintBanner />}
       {editor.open && <EditorUI />}

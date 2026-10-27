@@ -13,6 +13,7 @@ import { ARROW_DIR, DIRS, DIR_DELTA, Dir, FAN_DIR, Level, Pt } from './grid'
 import { LEVELS, levelCode } from './levels'
 import { GameState, blockAt, createState, isPlateCovered, isSolved, playerCanStand, push, reachable } from './logic'
 import { solveFrom } from './solver'
+import { SFX, playSfx, preloadSfx, startWind, stopWind } from './sfx'
 import { editor, progress, session } from './session'
 import { mobile } from '../hud/platform'
 
@@ -76,6 +77,9 @@ interface Slide {
   fallT: number // seconds into the fall / sink (only once the slide has reached the hole or pit)
   burst: boolean // the hole effect has been played
   trailT: number
+  snow: boolean // the slide ends on a snow patch
+  arrowAt: number[] // distance along the slide at which each arrow tile is reached
+  nextArrow: number
   over: Set<number> // plates (by index) the block is over right now, so a pop plays once per plate
   after: GameState // state once the slide ends
 }
@@ -364,6 +368,7 @@ function clearLevel() {
   }
   if (rt.door?.zone) triggerAreaEventsSystem.removeOnTriggerEnter(rt.door.zone)
   for (const e of rt.entities) engine.removeEntity(e)
+  stopWind()
   rt = null
 }
 
@@ -483,6 +488,7 @@ function buildLevel(level: Level, index: number) {
   pushEffort.progress = 0
   pushEffort.blockIndex = -1
   refreshPlates(false)
+  startWind(rt.fans.filter((f) => f.len >= 1), FLOOR_TOP + 1)
 }
 
 /** The level floats, so hang a tapering mass of rock under it (a stepped inverted pyramid with a few spikes). */
@@ -676,7 +682,8 @@ export function teleportToStart() {
 }
 
 /** Press the plate: the clip plays forward so fast that it snaps to the pressed pose. */
-function pressPlate(p: Plate) {
+function pressPlate(p: Plate, sound = true) {
+  if (sound) playSfx(SFX.plate)
   const st = Animator.getMutable(p.entity).states[0]
   st.playing = true
   st.loop = false
@@ -695,6 +702,7 @@ function releasePlate(p: Plate) {
     p.pending = true
     return
   }
+  playSfx(SFX.plate, 0.6)
   const st = Animator.getMutable(p.entity).states[0]
   st.playing = true
   st.loop = false
@@ -752,7 +760,7 @@ function refreshPlates(fx: boolean) {
   if (!rt) return
   for (const p of rt.plates) {
     const on = isPlateCovered(rt.state, p.pt)
-    if (on && !p.vis) pressPlate(p)
+    if (on && !p.vis) pressPlate(p, fx)
     else if (on) p.pending = false
     else releasePlate(p)
     if (fx && on && !p.on) {
@@ -1043,6 +1051,12 @@ function startPush(index: number, dir: Dir) {
   const from = Transform.get(rt.blocks[index]).position
   const pts = [Vector3.clone(from), ...res.path.map((p) => tileCentre(p, rt!.level, FLOOR_TOP + BLOCK_SIZE / 2))]
   const lens = pts.slice(1).map((p, i) => Vector3.distance(pts[i], p))
+  const arrowAt: number[] = []
+  let cum = 0
+  res.path.forEach((p, i) => {
+    cum += lens[i]
+    if (ARROW_DIR[rt!.level.tiles[p.y][p.x]] !== undefined) arrowAt.push(cum)
+  })
   rt.slide = {
     index,
     pts,
@@ -1055,10 +1069,14 @@ function startPush(index: number, dir: Dir) {
     fallT: 0,
     burst: false,
     trailT: 0,
+    snow: res.path.length > 0 && rt.level.tiles[res.path[res.path.length - 1].y][res.path[res.path.length - 1].x] === 'N',
+    arrowAt,
+    nextArrow: 0,
     over: new Set(rt.plates.flatMap((p, k) => (blockAt(rt!.state, p.pt) === index ? [k] : []))), // it starts on these: no pop for them
     after: res.state
   }
   dust(from.x, FLOOR_TOP + 0.1, from.z, 5)
+  playSfx(SFX.slide)
   clearHint()
   if (!res.fell) {
     session.moves = res.state.moves
@@ -1131,6 +1149,10 @@ function slideSystem(dt: number) {
     const len = s.lens[i]
     t.position = Vector3.lerp(a, b, len === 0 ? 1 : Math.min(1, d / len))
     updatePlatesUnder(t.position, s.index)
+    while (s.nextArrow < s.arrowAt.length && s.travelled >= s.arrowAt[s.nextArrow]) {
+      s.nextArrow++
+      playSfx(SFX.arrow)
+    }
     s.trailT += dt
     if (s.trailT > 0.04 && len > 0) {
       s.trailT = 0
@@ -1167,12 +1189,14 @@ function slideSystem(dt: number) {
     rt.blocks.splice(s.index, 1)
     dust(s.to.x, FLOOR_TOP + 0.1, s.to.z, 10, FX_AMBER)
     stopBurst(s.to.x, FLOOR_TOP, s.to.z)
+    playSfx(SFX.stop)
     finishSlide(s.after, false)
     return
   }
 
   finishSlide(s.after, true)
   stopBurst(s.to.x, FLOOR_TOP, s.to.z)
+  playSfx(s.snow ? SFX.snow : SFX.stop)
 }
 
 /** Common end of a slide: adopt the new state, update plates, and check for the win. */
@@ -1391,6 +1415,7 @@ export function setupWorld() {
   buildLevelLights(ORIGIN, ELEV)
   buildLobby() // the game starts in the lobby: no level is built until one is picked
   setupFx()
+  preloadSfx()
   engine.addSystem(pushSystem, 9, 'sm-push')
   engine.addSystem(slideSystem, 8, 'sm-slide')
   engine.addSystem(playerFallSystem, 7, 'sm-player-fall')
