@@ -184,6 +184,27 @@
             "parent": 512
           }
         },
+        "518": {
+          "json": {
+            "position": {
+              "x": 64,
+              "y": -0.75,
+              "z": 2
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "w": 1
+            },
+            "scale": {
+              "x": 2.5999999046325684,
+              "y": 2.5999999046325684,
+              "z": 0.8999999761581421
+            },
+            "parent": 0
+          }
+        },
         "519": {
           "json": {
             "position": {
@@ -3695,19 +3716,19 @@
           "json": {
             "position": {
               "x": 64,
-              "y": 3.5,
+              "y": 5.75,
               "z": 1.75
-            },
-            "scale": {
-              "x": 11,
-              "y": 4.400000095367432,
-              "z": 0.30000001192092896
             },
             "rotation": {
               "x": 0,
               "y": 0,
               "z": 0,
               "w": 1
+            },
+            "scale": {
+              "x": 10,
+              "y": 11.399999618530273,
+              "z": 0.30000001192092896
             },
             "parent": 516
           }
@@ -3718,27 +3739,6 @@
               "x": 64,
               "y": 3.5,
               "z": 2
-            },
-            "scale": {
-              "x": 1,
-              "y": 1,
-              "z": 1
-            },
-            "rotation": {
-              "x": 0,
-              "y": 0,
-              "z": 0,
-              "w": 1
-            },
-            "parent": 519
-          }
-        },
-        "691": {
-          "json": {
-            "position": {
-              "x": 64,
-              "y": 6.2,
-              "z": 19
             },
             "scale": {
               "x": 1,
@@ -3817,12 +3817,12 @@
             "parent": 0
           }
         },
-        "66230": {
+        "66229": {
           "json": {
             "position": {
               "x": 64.0,
               "y": 6.4,
-              "z": 24.650000000000002
+              "z": 24.65
             },
             "rotation": {
               "x": 0,
@@ -3838,12 +3838,12 @@
             "parent": 519
           }
         },
-        "66232": {
+        "66230": {
           "json": {
             "position": {
               "x": 50.09999997090574,
               "y": 6.4,
-              "z": 12.75000002909426
+              "z": 12.750000029094261
             },
             "rotation": {
               "x": 0,
@@ -3859,12 +3859,12 @@
             "parent": 519
           }
         },
-        "66234": {
+        "66231": {
           "json": {
             "position": {
               "x": 78.15000002909426,
               "y": 6.4,
-              "z": 12.74999997090574
+              "z": 12.749999970905739
             },
             "rotation": {
               "x": 0,
@@ -3948,11 +3948,6 @@
           "json": {
             "billboardMode": 2
           }
-        },
-        "691": {
-          "json": {
-            "billboardMode": 2
-          }
         }
       }
     },
@@ -3965,6 +3960,13 @@
         "protocolBuffer": "PBGltfContainer"
       },
       "data": {
+        "518": {
+          "json": {
+            "src": "assets/models/EntranceDoor.glb",
+            "visibleMeshesCollisionMask": 0,
+            "invisibleMeshesCollisionMask": 3
+          }
+        },
         "520": {
           "json": {
             "src": "assets/models/StoneTiles/stoneTiles08.glb",
@@ -6718,6 +6720,11 @@
             "value": "Lobby Lights"
           }
         },
+        "518": {
+          "json": {
+            "value": "EntranceDoor.glb"
+          }
+        },
         "519": {
           "json": {
             "value": "Lobby Signs"
@@ -7563,11 +7570,6 @@
             "value": "LEADERBOARD Sign"
           }
         },
-        "691": {
-          "json": {
-            "value": "SLIDE MAZE Sign"
-          }
-        },
         "693": {
           "json": {
             "value": "Door Editor"
@@ -7583,17 +7585,17 @@
             "value": "Door Levels"
           }
         },
-        "66230": {
+        "66229": {
           "json": {
             "value": "Sign Levels"
           }
         },
-        "66232": {
+        "66230": {
           "json": {
             "value": "Sign Community Levels"
           }
         },
-        "66234": {
+        "66231": {
           "json": {
             "value": "Sign Editor"
           }
@@ -7627,25 +7629,7 @@
             }
           }
         },
-        "691": {
-          "json": {
-            "text": "SLIDE MAZE",
-            "fontSize": 5,
-            "textColor": {
-              "r": 0.75,
-              "g": 0.93,
-              "b": 1,
-              "a": 1
-            },
-            "outlineWidth": 0.12,
-            "outlineColor": {
-              "r": 0.02,
-              "g": 0.05,
-              "b": 0.1
-            }
-          }
-        },
-        "66230": {
+        "66229": {
           "json": {
             "text": "LEVELS",
             "fontSize": 2.6,
@@ -7663,7 +7647,7 @@
             }
           }
         },
-        "66232": {
+        "66230": {
           "json": {
             "text": "COMMUNITY LEVELS",
             "fontSize": 2.6,
@@ -7681,7 +7665,7 @@
             }
           }
         },
-        "66234": {
+        "66231": {
           "json": {
             "text": "EDITOR",
             "fontSize": 2.6,
@@ -7784,9 +7768,9 @@
         "serializationType": "map"
       },
       "data": {
-        "0": {
+        "689": {
           "json": {
-            "gizmo": 0
+            "gizmo": 1
           }
         }
       }
@@ -7840,7 +7824,8 @@
                   512,
                   66228,
                   693,
-                  694
+                  694,
+                  518
                 ]
               },
               {
@@ -8061,10 +8046,9 @@
                 "open": true,
                 "children": [
                   690,
-                  691,
+                  66229,
                   66230,
-                  66232,
-                  66234
+                  66231
                 ]
               },
               {
@@ -8740,10 +8724,6 @@
                 "children": []
               },
               {
-                "entity": 691,
-                "children": []
-              },
-              {
                 "entity": 66228,
                 "children": []
               },
@@ -8756,15 +8736,19 @@
                 "children": []
               },
               {
+                "entity": 518,
+                "children": []
+              },
+              {
+                "entity": 66229,
+                "children": []
+              },
+              {
                 "entity": 66230,
                 "children": []
               },
               {
-                "entity": 66232,
-                "children": []
-              },
-              {
-                "entity": 66234,
+                "entity": 66231,
                 "children": []
               }
             ]
@@ -8805,6 +8789,9 @@
           "json": {}
         },
         "517": {
+          "json": {}
+        },
+        "518": {
           "json": {}
         },
         "519": {
@@ -9314,9 +9301,6 @@
         "690": {
           "json": {}
         },
-        "691": {
-          "json": {}
-        },
         "693": {
           "json": {}
         },
@@ -9326,13 +9310,13 @@
         "66228": {
           "json": {}
         },
+        "66229": {
+          "json": {}
+        },
         "66230": {
           "json": {}
         },
-        "66232": {
-          "json": {}
-        },
-        "66234": {
+        "66231": {
           "json": {}
         }
       }
