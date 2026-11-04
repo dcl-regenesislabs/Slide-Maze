@@ -1,27 +1,31 @@
 import ReactEcs, { Label, UiEntity } from '@dcl/sdk/react-ecs'
+import { BTN, FramedSprite, NineBg, PANEL, faceOf } from './sprites'
 import { Color4 } from '@dcl/sdk/math'
 import { mobile } from './platform'
 
-// Slide Maze look: a frozen cave. Deep navy panels, pale-ice rims, one warm amber accent (the same orange family as
+// Slide Maze look (pre-revamp notes): a frozen cave. Deep navy panels, pale-ice rims, one warm amber accent (the same orange family as
 // the movable blocks, so "orange = interactive" holds in the world and in the UI). Every colour and size lives here
 // so the whole HUD can be re-skinned from one place.
 const hex = (h: string, a = 1) =>
   Color4.create(parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255, a)
 
+// Option C "Arcade helado": saturated blues, chunky ink outlines, amber accent. Panels and buttons are sprites
+// (see sprites.tsx); these colours are for text and the few flat bits that remain.
+export const INK = hex('#0b1530')
 export const PAL = {
-  panel: hex('#0b1830', 0.92),
-  panelHi: hex('#16305a', 0.96),
+  panel: hex('#2a4da6', 0.96),
+  panelHi: hex('#3f80e6'),
   rim: hex('#8fd8ff'),
   rimDim: hex('#4a7ea8'),
-  text: hex('#eaf7ff'),
-  dim: hex('#9cc4e0'),
-  outline: hex('#050d1c'),
-  amber: hex('#ffb13b'),
-  amberDark: hex('#c9791a'),
-  good: hex('#5dffa0'),
-  goodDark: hex('#1c8a54'),
-  bad: hex('#ff6b5e'),
-  badDark: hex('#a8281f')
+  text: hex('#ffffff'),
+  dim: hex('#cff3ff'),
+  outline: INK,
+  amber: hex('#ffc23d'),
+  amberDark: hex('#ff7a1a'),
+  good: hex('#74f5ae'),
+  goodDark: hex('#20b868'),
+  bad: hex('#ff8080'),
+  badDark: hex('#e0344a')
 }
 
 // ---- Scaling ----
@@ -59,7 +63,13 @@ export const lighten = (c: Color4, k: number) =>
 
 type Size = number | `${number}%`
 
-/** A rounded card with a coloured rim: the outer entity's padding is the rim, the fill sits inside. */
+/** How big a panel's corners are drawn: the sprite's 30 px radius maps to the old S(16) radius. */
+const panelUnit = () => S(16) / 30
+
+/**
+ * Panel: the blue "Arcade helado" slab (panels/panel_9slice.png, cut into nine pieces so it stretches on phones too).
+ * Same props as before; `fill` / `rim` are accepted for compatibility but every panel uses the one sprite.
+ */
 export const Card = (props: {
   width: Size
   height: Size
@@ -75,32 +85,22 @@ export const Card = (props: {
   margin?: { top?: number; left?: number; right?: number; bottom?: number }
   children?: any
 }) => {
-  const r = props.radius ?? S(16)
-  const b = props.border ?? Math.max(2, S(3))
+  const u = panelUnit()
   return (
     <UiEntity
-      uiTransform={{
-        width: props.width,
-        height: props.height,
-        margin: props.margin,
-        padding: b,
-        borderRadius: r,
-        pointerFilter: props.block ? 'block' : 'none'
-      }}
-      uiBackground={{ color: props.rim ?? PAL.rim }}
+      uiTransform={{ width: props.width, height: props.height, margin: props.margin, pointerFilter: props.block ? 'block' : 'none' }}
     >
+      <NineBg file="panels/panel_9slice.png" geo={PANEL} l={40} r={40} t={40} b={52} u={u} />
       <UiEntity
         uiTransform={{
           width: '100%',
           height: '100%',
-          borderRadius: Math.max(2, r - b),
           flexDirection: props.dir ?? 'column',
           alignItems: props.align ?? 'center',
           justifyContent: props.justify ?? 'center',
           padding: props.pad ?? 0,
-          pointerFilter: props.block ? 'block' : 'none'
+          pointerFilter: 'none'
         }}
-        uiBackground={{ color: props.fill ?? PAL.panel }}
       >
         {props.children}
       </UiEntity>
@@ -108,14 +108,7 @@ export const Card = (props: {
   )
 }
 
-const OFF = [
-  { left: -2, top: 0 },
-  { left: 2, top: 0 },
-  { left: 0, top: -2 },
-  { left: 0, top: 2 }
-]
-
-/** Text with a dark outline so it stays readable over the 3D world. */
+/** Ink outline all around plus a solid drop shadow, like the sprite lettering. */
 export const OutlineLabel = (props: {
   value: string
   fontSize: number
@@ -127,17 +120,30 @@ export const OutlineLabel = (props: {
 }) => {
   const align = props.align ?? 'middle-center'
   const font = props.font ?? 'sans-serif'
+  const o = Math.max(2, Math.round(props.fontSize / 11))
+  const offs = [
+    { left: -o, top: 0 },
+    { left: o, top: 0 },
+    { left: 0, top: -o },
+    { left: 0, top: o },
+    { left: -o, top: -o },
+    { left: o, top: -o },
+    { left: -o, top: o },
+    { left: o, top: o },
+    { left: 0, top: o * 2 }
+  ]
   return (
     <UiEntity uiTransform={{ width: props.width, height: props.height, pointerFilter: 'none' }}>
-      {OFF.map((o, i) => (
+      {offs.map((p, i) => (
         <Label
           key={`o${i}`}
           value={props.value}
           fontSize={props.fontSize}
-          color={PAL.outline}
+          color={INK}
           font={font}
           textAlign={align}
-          uiTransform={{ width: '100%', height: props.height, positionType: 'absolute', position: o }}
+          textWrap="nowrap"
+          uiTransform={{ width: '100%', height: props.height, positionType: 'absolute', position: p }}
         />
       ))}
       <Label
@@ -146,13 +152,40 @@ export const OutlineLabel = (props: {
         color={props.color ?? PAL.text}
         font={font}
         textAlign={align}
-        uiTransform={{ width: '100%', height: props.height }}
+        textWrap="nowrap"
+        uiTransform={{ width: '100%', height: props.height, positionType: 'absolute', position: { left: 0, top: 0 } }}
       />
     </UiEntity>
   )
 }
 
-/** Pill button with hover and press feedback. `accent` makes it the primary (amber) action. */
+// ---- Buttons ----
+const PRESS_MS = 140
+const pressAt: Record<string, number> = {}
+/** Marks a sprite as pressed for a moment (shows its _pressed frame). */
+export const press = (id: string) => {
+  pressAt[id] = Date.now()
+}
+export const isPressed = (id: string) => Date.now() - (pressAt[id] ?? 0) < PRESS_MS
+export type BtnState = 'normal' | 'hover' | 'pressed' | 'disabled'
+export const btnState = (id: string, disabled?: boolean): BtnState =>
+  disabled ? 'disabled' : isPressed(id) ? 'pressed' : hovered[id] ? 'hover' : 'normal'
+
+// Buttons whose label is baked into a sprite (Lilita One lettering, optically centred). Key: `${kind}|${label}`.
+const BAKED: Record<string, string> = {
+  'primary|PLAY': 'buttons_labeled/btn_play',
+  'primary|Options': 'buttons_labeled/btn_options',
+  'danger|Close': 'buttons_labeled/btn_close',
+  'secondary|< Prev': 'buttons_labeled/btn_prev',
+  'secondary|Next >': 'buttons_labeled/btn_next',
+  'primary|My levels': 'buttons_labeled/btn_my_levels'
+}
+const HAS_DISABLED = ['buttons_labeled/btn_prev', 'buttons_labeled/btn_next']
+
+/**
+ * Chunky pill button with normal / hover / pressed sprites. Labels that have a baked sprite use it (its width follows
+ * the sprite's aspect at the requested height); any other label is drawn on a blank pill, centred on the face.
+ */
 export const PillButton = (props: {
   id: string
   label: string
@@ -160,53 +193,45 @@ export const PillButton = (props: {
   height: number
   accent?: boolean
   danger?: boolean // red: close / cancel
+  disabled?: boolean
+  sprite?: string // force a baked sprite base, e.g. 'buttons_labeled/btn_options_open'
+  fontSize?: number
   onClick: () => void
   margin?: { top?: number; left?: number; right?: number; bottom?: number }
 }) => {
-  const hov = !!hovered[props.id]
-  const k = popFactor(props.id, 0.08)
-  const w = Math.round(props.width * k)
-  const h = Math.round(props.height * k)
-  const rim = props.danger ? PAL.bad : props.accent ? PAL.amber : PAL.rimDim
-  const fill = props.danger ? PAL.badDark : props.accent ? PAL.amberDark : PAL.panelHi
-  const border = Math.max(2, S(3))
+  const kind = props.danger ? 'danger' : props.accent ? 'primary' : 'secondary'
+  const state = btnState(props.id, props.disabled)
+  const h = props.height
+  const events = {
+    onMouseDown: () => {
+      if (props.disabled) return
+      pressAt[props.id] = Date.now()
+      popPress(props.id)
+      props.onClick()
+    },
+    ...hover(props.id)
+  }
+  const baked = props.sprite ?? BAKED[`${kind}|${props.label}`]
+  if (baked) {
+    const st = state === 'disabled' && !HAS_DISABLED.includes(baked) ? 'normal' : state
+    const file = `${baked}_${st}.png`
+    const face = faceOf(file, BTN)
+    const states = ['normal', 'hover', 'pressed', ...(HAS_DISABLED.includes(baked) ? ['disabled'] : [])].map((s) => `${baked}_${s}.png`)
+    return <FramedSprite file={file} states={states} geo={BTN} w={Math.round((h * face.w) / face.h)} h={h} margin={props.margin} block {...events} />
+  }
+  const u = h / 66
+  const st = state === 'disabled' ? 'disabled' : state
+  const file = st === 'disabled' ? 'buttons/btn_secondary_disabled.png' : `buttons/btn_${kind}_${st}.png`
+  const fs = props.fontSize ?? Math.min(FS(20), Math.round(h * 0.5))
+  const dy = state === 'pressed' ? Math.round(4 * u) : 0
   return (
     <UiEntity
-      uiTransform={{
-        width: w,
-        height: h,
-        margin: props.margin,
-        padding: border,
-        borderRadius: h / 2,
-        pointerFilter: 'block'
-      }}
-      uiBackground={{ color: hov ? lighten(rim, 0.15) : rim }}
-      onMouseDown={() => {
-        popPress(props.id)
-        props.onClick()
-      }}
-      {...hover(props.id)}
+      uiTransform={{ width: props.width, height: h, margin: props.margin, justifyContent: 'center', alignItems: 'center', pointerFilter: 'block' }}
+      {...events}
     >
-      <UiEntity
-        uiTransform={{
-          width: '100%',
-          height: '100%',
-          borderRadius: h / 2 - border,
-          justifyContent: 'center',
-          alignItems: 'center',
-          pointerFilter: 'none'
-        }}
-        uiBackground={{ color: hov ? lighten(fill, 0.08) : fill }}
-      >
-        <Label
-          value={props.label}
-          fontSize={FS(20)}
-          font="sans-serif"
-          color={PAL.text}
-          textAlign="middle-center"
-          textWrap="nowrap"
-          uiTransform={{ width: w - border * 2, height: h - border * 2 }}
-        />
+      <NineBg file={file} geo={BTN} l={39} r={39} t={0} b={0} u={u} />
+      <UiEntity uiTransform={{ width: '100%', height: h, position: { top: dy - Math.round(u) }, justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
+        <OutlineLabel value={props.label} fontSize={fs} color={state === 'disabled' ? PAL.dim : PAL.text} width="100%" height={h} />
       </UiEntity>
     </UiEntity>
   )
