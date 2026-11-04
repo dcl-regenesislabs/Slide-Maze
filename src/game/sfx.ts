@@ -11,14 +11,17 @@ export const SFX = {
   plate: 'assets/Sounds/Plate.wav',
   arrow: 'assets/Sounds/ArrowChange.wav'
 }
+const MUSIC_TRACK = 'assets/Sounds/SlideMazeSong.mp3'
+const MUSIC_GAIN = 0.5 // the track's level at the panel's 100%, so the effects always sit above it
 const WIND_LOOP = 'assets/Sounds/WindLoop.wav'
 const WIND_VOLUME = 0.6
 
-/** Player sound settings. `music` is ready for when a track exists: read `musicLevel()` for the AudioSource volume. */
+/** Player sound settings. */
 export const sfx = { muted: false, volume: 1 }
 export const music = { muted: false, volume: 0.5 }
 export const soundPanel = { open: false }
-export const musicLevel = () => (music.muted ? 0 : music.volume)
+export const musicLevel = () => (music.muted ? 0 : music.volume * MUSIC_GAIN)
+let musicEntity: Entity | null = null
 
 const own = new Map<string, Entity>()
 let wind: Entity[] = []
@@ -86,10 +89,27 @@ export function setSfxVolume(v: number): void {
   playSfx(SFX.plate) // hear the new level
 }
 
+/** The background track: one global looping clip that plays in the lobby and in every level. */
+export function startMusic(): void {
+  if (musicEntity) return
+  musicEntity = engine.addEntity()
+  Transform.create(musicEntity, {})
+  AudioSource.create(musicEntity, { audioClipUrl: MUSIC_TRACK, playing: musicLevel() > 0, loop: true, global: true, volume: musicLevel() })
+}
+
+function applyMusic(): void {
+  if (!musicEntity) return
+  const a = AudioSource.getMutable(musicEntity)
+  a.volume = musicLevel()
+  a.playing = musicLevel() > 0
+}
+
 export function toggleMusicMute(): void {
   music.muted = !music.muted
+  applyMusic()
 }
 
 export function setMusicVolume(v: number): void {
   music.volume = v
+  applyMusic()
 }

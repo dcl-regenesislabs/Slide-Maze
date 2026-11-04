@@ -13,7 +13,7 @@ import { ARROW_DIR, DIRS, DIR_DELTA, Dir, FAN_DIR, Level, Pt } from './grid'
 import { LEVELS, levelCode } from './levels'
 import { GameState, blockAt, createState, isPlateCovered, isSolved, playerCanStand, push, reachable } from './logic'
 import { solveFrom } from './solver'
-import { SFX, playSfx, preloadSfx, startWind, stopWind } from './sfx'
+import { SFX, playSfx, preloadSfx, startMusic, startWind, stopWind } from './sfx'
 import { editor, progress, session } from './session'
 import { mobile } from '../hud/platform'
 
@@ -1416,6 +1416,7 @@ export function setupWorld() {
   buildLobby() // the game starts in the lobby: no level is built until one is picked
   setupFx()
   preloadSfx()
+  startMusic()
   engine.addSystem(pushSystem, 9, 'sm-push')
   engine.addSystem(slideSystem, 8, 'sm-slide')
   engine.addSystem(playerFallSystem, 7, 'sm-player-fall')
