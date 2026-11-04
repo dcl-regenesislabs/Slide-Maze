@@ -8,7 +8,7 @@ import { FX_COLORS, clearFx, confetti, dust, holeBurst, plateOn, setupFx, stopBu
 import { buildCave, buildLevelLights } from './cave'
 import { iceModel, slabEntity, SNOW_MODELS, snowModel, stoneModel } from './tiles'
 import { buildCeiling, buildCrystals, buildWallRing, ringAround } from './wallRing'
-import { buildLobby, LOBBY_SPAWN } from './lobby'
+import { LOBBY_SPAWN, setupLobby } from './lobby'
 import { ARROW_DIR, DIRS, DIR_DELTA, Dir, FAN_DIR, Level, Pt } from './grid'
 import { LEVELS, levelCode } from './levels'
 import { GameState, blockAt, createState, isPlateCovered, isSolved, playerCanStand, push, reachable } from './logic'
@@ -1413,7 +1413,7 @@ function playerFallSystem(dt: number) {
 export function setupWorld() {
   buildCave() // the dark cavern around everything
   buildLevelLights(ORIGIN, ELEV)
-  buildLobby() // the game starts in the lobby: no level is built until one is picked
+  setupLobby() // the lobby itself is authored in the scene (Creator Hub); no level is built until one is picked
   setupFx()
   preloadSfx()
   startMusic()
