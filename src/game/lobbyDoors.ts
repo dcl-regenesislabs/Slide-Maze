@@ -1,7 +1,7 @@
 // The three lobby doors, placed in the scene with the Creator Hub (ExitDoor.glb entities). They start shut and dark. When the
 // player comes close the runes light up and the doors swing open; walk away and they close and go dark again. Walking into
 // the open doorway does the door's job:
-//   Levels           -> the level-select menu (regular play)
+//   Levels           -> the first unfinished level (regular play)
 //   Community levels -> levels made by the community (not built yet: a note for now)
 //   Editor           -> the level editor
 //
@@ -14,7 +14,9 @@ import { Quaternion, Vector3 } from '@dcl/sdk/math'
 import { exitGlow } from './doorGlow'
 import { openEditor } from './editor'
 import { LOBBY_CENTRE } from './lobby'
-import { session } from './session'
+import { progress, session } from './session'
+import { loadLevel } from './world'
+import { beginPortalTransition, portalTransition } from './portalTransition'
 
 const DOOR_MODEL = 'assets/models/ExitDoor.glb'
 const OPEN_DIST = 6 // metres from the door at which it wakes up
@@ -33,15 +35,17 @@ interface LobbyDoor {
   zone: Entity // the doorway: walking into it with the doors open triggers the door's action
   glow: number // 0..1
   open: number // 0 = shut, 1 = fully open
+  inside: boolean // local player occupies the doorway
+  used: boolean // re-arm only after leaving the doorway
   want: boolean // the player is close
 }
 
 const doors: LobbyDoor[] = []
 
-const actions: Record<Role, () => void> = {
+const actions: Record<Role, () => void | Promise<unknown>> = {
   levels: () => {
-    session.menuOpen = true
-    session.codeOpen = false
+    const next = progress.findIndex((level) => !level.done)
+    return loadLevel(next < 0 ? 0 : next)
   },
   community: () => {
     session.toastText = 'Community levels are coming soon!'
@@ -88,10 +92,15 @@ export function setupLobbyDoors() {
     })
     TriggerArea.setBox(zone, ColliderLayer.CL_PLAYER)
 
-    const door: LobbyDoor = { role, entity, gate, zone, glow: 0, open: 0, want: false }
+    const door: LobbyDoor = { role, entity, gate, zone, glow: 0, open: 0, want: false, inside: false, used: false }
     triggerAreaEventsSystem.onTriggerEnter(zone, (result) => {
       if (result.trigger?.entity !== engine.PlayerEntity) return
-      if (session.inLobby && door.open >= 1) actions[role]()
+      door.inside = true
+    })
+    triggerAreaEventsSystem.onTriggerExit(zone, (result) => {
+      if (result.trigger?.entity !== engine.PlayerEntity) return
+      door.inside = false
+      door.used = false
     })
     doors.push(door)
   }
@@ -130,6 +139,11 @@ function lobbyDoorSystem(dt: number) {
       st.playing = true
       st.speed = -1 // the clip plays backwards
       st.shouldReset = false
+    }
+    if (session.inLobby && d.inside && !d.used && d.open >= 1 && !portalTransition.active) {
+      d.used = true
+      if (d.role === 'community') actions.community()
+      else beginPortalTransition(actions[d.role])
     }
     // the doorway is passable once the leaves are well apart
     const blocked = MeshCollider.has(d.gate)

@@ -17,6 +17,7 @@ import { solveFrom } from './solver'
 import { SFX, playSfx, preloadSfx, startMusic, startWind, stopWind } from './sfx'
 import { editor, progress, session } from './session'
 import { mobile } from '../hud/platform'
+import { beginPortalTransition } from './portalTransition'
 
 // ---- Tuning (metres, seconds) ----
 const TILE = 3 // one grid tile
@@ -675,11 +676,11 @@ export function teleportToStart() {
   if (!rt) return
   const l = rt.level
   const pos = rt.spawn ?? tileCentre(l.start, l, FLOOR_TOP + 0.1)
-  void movePlayerTo({
+  prevPlayer = null
+  return movePlayerTo({
     newRelativePosition: pos,
     cameraTarget: Vector3.create(ORIGIN.x, FLOOR_TOP + 1, ORIGIN.z)
   })
-  prevPlayer = null
 }
 
 /** Press the plate: the clip plays forward so fast that it snaps to the pressed pose. */
@@ -964,20 +965,22 @@ export function restartLevel() {
 
 export function loadLevel(index: number) {
   buildLevel(LEVELS[index], index)
-  teleportToStart()
+  return teleportToStart()
 }
 
 /** Leave the current level and go back to the lobby. */
 export function returnToLobby() {
-  clearLevel()
-  clearFx()
-  session.inLobby = true
-  session.menuOpen = false
-  session.codeOpen = false
-  session.solved = false
-  session.levelIndex = 0
-  void movePlayerTo({ newRelativePosition: LOBBY_SPAWN, cameraTarget: Vector3.create(LOBBY_SPAWN.x, 2, LOBBY_SPAWN.z + 10) })
-  prevPlayer = null
+  beginPortalTransition(() => {
+    clearLevel()
+    clearFx()
+    session.inLobby = true
+    session.menuOpen = false
+    session.codeOpen = false
+    session.solved = false
+    session.levelIndex = 0
+    prevPlayer = null
+    return movePlayerTo({ newRelativePosition: LOBBY_SPAWN, cameraTarget: Vector3.create(LOBBY_SPAWN.x, 2, LOBBY_SPAWN.z + 10) })
+  })
 }
 
 /** Show a level that is not one of the shipped ones (the editor's working copy). Does not move the player. */
