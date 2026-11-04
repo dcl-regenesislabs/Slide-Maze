@@ -3817,33 +3817,12 @@
             "parent": 0
           }
         },
-        "66229": {
-          "json": {
-            "position": {
-              "x": 64,
-              "y": 8.8,
-              "z": 25.5
-            },
-            "rotation": {
-              "x": 0,
-              "y": 0.0,
-              "z": 0,
-              "w": 1.0
-            },
-            "scale": {
-              "x": 7,
-              "y": 1.4,
-              "z": 0.3
-            },
-            "parent": 519
-          }
-        },
         "66230": {
           "json": {
             "position": {
               "x": 64.0,
-              "y": 8.8,
-              "z": 25.3
+              "y": 6.4,
+              "z": 24.650000000000002
             },
             "rotation": {
               "x": 0,
@@ -3855,27 +3834,6 @@
               "x": 1,
               "y": 1,
               "z": 1
-            },
-            "parent": 519
-          }
-        },
-        "66231": {
-          "json": {
-            "position": {
-              "x": 49.25,
-              "y": 8.8,
-              "z": 12.75
-            },
-            "rotation": {
-              "x": 0,
-              "y": -0.7071067932881648,
-              "z": 0,
-              "w": 0.70710676908493
-            },
-            "scale": {
-              "x": 7,
-              "y": 1.4,
-              "z": 0.3
             },
             "parent": 519
           }
@@ -3883,9 +3841,9 @@
         "66232": {
           "json": {
             "position": {
-              "x": 49.44999999315429,
-              "y": 8.8,
-              "z": 12.750000006845708
+              "x": 50.09999997090574,
+              "y": 6.4,
+              "z": 12.75000002909426
             },
             "rotation": {
               "x": 0,
@@ -3901,33 +3859,12 @@
             "parent": 519
           }
         },
-        "66233": {
-          "json": {
-            "position": {
-              "x": 79,
-              "y": 8.8,
-              "z": 12.75
-            },
-            "rotation": {
-              "x": 0,
-              "y": 0.70710676908493,
-              "z": 0,
-              "w": 0.7071067932881648
-            },
-            "scale": {
-              "x": 7,
-              "y": 1.4,
-              "z": 0.3
-            },
-            "parent": 519
-          }
-        },
         "66234": {
           "json": {
             "position": {
-              "x": 78.8000000068457,
-              "y": 8.8,
-              "z": 12.749999993154292
+              "x": 78.15000002909426,
+              "y": 6.4,
+              "z": 12.74999997090574
             },
             "rotation": {
               "x": 0,
@@ -6074,75 +6011,6 @@
               }
             }
           }
-        },
-        "66229": {
-          "json": {
-            "material": {
-              "$case": "pbr",
-              "pbr": {
-                "albedoColor": {
-                  "r": 0.05,
-                  "g": 0.09,
-                  "b": 0.17,
-                  "a": 1
-                },
-                "roughness": 0.8,
-                "metallic": 0,
-                "emissiveColor": {
-                  "r": 0.3,
-                  "g": 0.9,
-                  "b": 1
-                },
-                "emissiveIntensity": 0.25
-              }
-            }
-          }
-        },
-        "66231": {
-          "json": {
-            "material": {
-              "$case": "pbr",
-              "pbr": {
-                "albedoColor": {
-                  "r": 0.05,
-                  "g": 0.09,
-                  "b": 0.17,
-                  "a": 1
-                },
-                "roughness": 0.8,
-                "metallic": 0,
-                "emissiveColor": {
-                  "r": 1,
-                  "g": 0.45,
-                  "b": 0.8
-                },
-                "emissiveIntensity": 0.25
-              }
-            }
-          }
-        },
-        "66233": {
-          "json": {
-            "material": {
-              "$case": "pbr",
-              "pbr": {
-                "albedoColor": {
-                  "r": 0.05,
-                  "g": 0.09,
-                  "b": 0.17,
-                  "a": 1
-                },
-                "roughness": 0.8,
-                "metallic": 0,
-                "emissiveColor": {
-                  "r": 1,
-                  "g": 0.75,
-                  "b": 0.25
-                },
-                "emissiveIntensity": 0.25
-              }
-            }
-          }
         }
       }
     },
@@ -6796,36 +6664,6 @@
           }
         },
         "689": {
-          "json": {
-            "mesh": {
-              "$case": "box",
-              "box": {
-                "uvs": []
-              }
-            }
-          }
-        },
-        "66229": {
-          "json": {
-            "mesh": {
-              "$case": "box",
-              "box": {
-                "uvs": []
-              }
-            }
-          }
-        },
-        "66231": {
-          "json": {
-            "mesh": {
-              "$case": "box",
-              "box": {
-                "uvs": []
-              }
-            }
-          }
-        },
-        "66233": {
           "json": {
             "mesh": {
               "$case": "box",
@@ -7745,34 +7583,19 @@
             "value": "Door Levels"
           }
         },
-        "66229": {
-          "json": {
-            "value": "Banner Levels"
-          }
-        },
         "66230": {
           "json": {
-            "value": "Banner Levels Text"
-          }
-        },
-        "66231": {
-          "json": {
-            "value": "Banner Community Levels"
+            "value": "Sign Levels"
           }
         },
         "66232": {
           "json": {
-            "value": "Banner Community Levels Text"
-          }
-        },
-        "66233": {
-          "json": {
-            "value": "Banner Editor"
+            "value": "Sign Community Levels"
           }
         },
         "66234": {
           "json": {
-            "value": "Banner Editor Text"
+            "value": "Sign Editor"
           }
         }
       }
@@ -7825,7 +7648,7 @@
         "66230": {
           "json": {
             "text": "LEVELS",
-            "fontSize": 3.2,
+            "fontSize": 2.6,
             "textColor": {
               "r": 0.3,
               "g": 0.9,
@@ -7843,7 +7666,7 @@
         "66232": {
           "json": {
             "text": "COMMUNITY LEVELS",
-            "fontSize": 3.2,
+            "fontSize": 2.6,
             "textColor": {
               "r": 1,
               "g": 0.45,
@@ -7861,7 +7684,7 @@
         "66234": {
           "json": {
             "text": "EDITOR",
-            "fontSize": 3.2,
+            "fontSize": 2.6,
             "textColor": {
               "r": 1,
               "g": 0.75,
@@ -8239,11 +8062,8 @@
                 "children": [
                   690,
                   691,
-                  66229,
                   66230,
-                  66231,
                   66232,
-                  66233,
                   66234
                 ]
               },
@@ -8936,23 +8756,11 @@
                 "children": []
               },
               {
-                "entity": 66229,
-                "children": []
-              },
-              {
                 "entity": 66230,
                 "children": []
               },
               {
-                "entity": 66231,
-                "children": []
-              },
-              {
                 "entity": 66232,
-                "children": []
-              },
-              {
-                "entity": 66233,
                 "children": []
               },
               {
@@ -9518,19 +9326,10 @@
         "66228": {
           "json": {}
         },
-        "66229": {
-          "json": {}
-        },
         "66230": {
           "json": {}
         },
-        "66231": {
-          "json": {}
-        },
         "66232": {
-          "json": {}
-        },
-        "66233": {
           "json": {}
         },
         "66234": {
