@@ -184,27 +184,6 @@
             "parent": 512
           }
         },
-        "518": {
-          "json": {
-            "position": {
-              "x": 0,
-              "y": 0,
-              "z": 0
-            },
-            "scale": {
-              "x": 1,
-              "y": 1,
-              "z": 1
-            },
-            "rotation": {
-              "x": 0,
-              "y": 0,
-              "z": 0,
-              "w": 1
-            },
-            "parent": 512
-          }
-        },
         "519": {
           "json": {
             "position": {
@@ -3712,69 +3691,6 @@
             "parent": 516
           }
         },
-        "686": {
-          "json": {
-            "position": {
-              "x": 64,
-              "y": 0.9,
-              "z": 16
-            },
-            "scale": {
-              "x": 1.6,
-              "y": 1.8,
-              "z": 1.2
-            },
-            "rotation": {
-              "x": 0,
-              "y": 0,
-              "z": 0,
-              "w": 1
-            },
-            "parent": 518
-          }
-        },
-        "687": {
-          "json": {
-            "position": {
-              "x": 64,
-              "y": 2.3,
-              "z": 15.55
-            },
-            "scale": {
-              "x": 2.4,
-              "y": 1.5,
-              "z": 0.18
-            },
-            "rotation": {
-              "x": -0.15643446504023087,
-              "y": 0,
-              "z": 0,
-              "w": 0.9876883405951378
-            },
-            "parent": 518
-          }
-        },
-        "688": {
-          "json": {
-            "position": {
-              "x": 64,
-              "y": 4.4,
-              "z": 16
-            },
-            "scale": {
-              "x": 1,
-              "y": 1,
-              "z": 1
-            },
-            "rotation": {
-              "x": 0,
-              "y": 0,
-              "z": 0,
-              "w": 1
-            },
-            "parent": 519
-          }
-        },
         "689": {
           "json": {
             "position": {
@@ -3782,16 +3698,16 @@
               "y": 3.5,
               "z": 1.75
             },
+            "scale": {
+              "x": 11,
+              "y": 4.400000095367432,
+              "z": 0.30000001192092896
+            },
             "rotation": {
               "x": 0,
               "y": 0,
               "z": 0,
               "w": 1
-            },
-            "scale": {
-              "x": 11,
-              "y": 4.400000095367432,
-              "z": 0.30000001192092896
             },
             "parent": 516
           }
@@ -3803,16 +3719,16 @@
               "y": 3.5,
               "z": 2
             },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
             "rotation": {
               "x": 0,
               "y": 0,
               "z": 0,
               "w": 1
-            },
-            "scale": {
-              "x": 1,
-              "y": 1,
-              "z": 1
             },
             "parent": 519
           }
@@ -3845,16 +3761,16 @@
               "y": 0,
               "z": 12.75
             },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
             "rotation": {
               "x": 0,
               "y": 0.7071067690849304,
               "z": 0,
               "w": 0.7071067690849304
-            },
-            "scale": {
-              "x": 1,
-              "y": 1,
-              "z": 1
             },
             "parent": 0
           }
@@ -3866,16 +3782,16 @@
               "y": 0,
               "z": 12.75
             },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
             "rotation": {
               "x": 0,
               "y": 0.7071067690849304,
               "z": 0,
               "w": 0.7071067690849304
-            },
-            "scale": {
-              "x": 1,
-              "y": 1,
-              "z": 1
             },
             "parent": 0
           }
@@ -3887,16 +3803,16 @@
               "y": 0,
               "z": 25.5
             },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
             "rotation": {
               "x": 0,
               "y": 0,
               "z": 0,
               "w": 1
-            },
-            "scale": {
-              "x": 1,
-              "y": 1,
-              "z": 1
             },
             "parent": 0
           }
@@ -3965,11 +3881,6 @@
         "protocolBuffer": "PBBillboard"
       },
       "data": {
-        "688": {
-          "json": {
-            "billboardMode": 2
-          }
-        },
         "690": {
           "json": {
             "billboardMode": 2
@@ -6015,46 +5926,6 @@
             }
           }
         },
-        "686": {
-          "json": {
-            "material": {
-              "$case": "pbr",
-              "pbr": {
-                "albedoColor": {
-                  "r": 0.2,
-                  "g": 0.27,
-                  "b": 0.38,
-                  "a": 1
-                },
-                "roughness": 0.5,
-                "metallic": 0.3
-              }
-            }
-          }
-        },
-        "687": {
-          "json": {
-            "material": {
-              "$case": "pbr",
-              "pbr": {
-                "albedoColor": {
-                  "r": 0.3,
-                  "g": 0.9,
-                  "b": 1,
-                  "a": 1
-                },
-                "roughness": 0.8,
-                "metallic": 0,
-                "emissiveColor": {
-                  "r": 0.3,
-                  "g": 0.9,
-                  "b": 1
-                },
-                "emissiveIntensity": 1.4
-              }
-            }
-          }
-        },
         "689": {
           "json": {
             "material": {
@@ -6088,24 +5959,7 @@
         "serializationType": "protocol-buffer",
         "protocolBuffer": "PBMeshCollider"
       },
-      "data": {
-        "686": {
-          "json": {
-            "mesh": {
-              "$case": "box",
-              "box": {}
-            }
-          }
-        },
-        "687": {
-          "json": {
-            "mesh": {
-              "$case": "box",
-              "box": {}
-            }
-          }
-        }
-      }
+      "data": {}
     },
     {
       "name": "core::MeshRenderer",
@@ -6756,26 +6610,6 @@
             }
           }
         },
-        "686": {
-          "json": {
-            "mesh": {
-              "$case": "box",
-              "box": {
-                "uvs": []
-              }
-            }
-          }
-        },
-        "687": {
-          "json": {
-            "mesh": {
-              "$case": "box",
-              "box": {
-                "uvs": []
-              }
-            }
-          }
-        },
         "689": {
           "json": {
             "mesh": {
@@ -6829,11 +6663,6 @@
         "517": {
           "json": {
             "value": "Lobby Lights"
-          }
-        },
-        "518": {
-          "json": {
-            "value": "Lobby Terminal"
           }
         },
         "519": {
@@ -7671,24 +7500,9 @@
             "value": "Crystal 57"
           }
         },
-        "686": {
-          "json": {
-            "value": "Level Select Terminal Base"
-          }
-        },
-        "687": {
-          "json": {
-            "value": "Level Select Terminal Screen"
-          }
-        },
-        "688": {
-          "json": {
-            "value": "SELECT LEVEL Sign"
-          }
-        },
         "689": {
           "json": {
-            "value": "Crystal 58"
+            "value": "Leaderboard Board"
           }
         },
         "690": {
@@ -7703,17 +7517,17 @@
         },
         "693": {
           "json": {
-            "value": "ExitDoor.glb_2"
+            "value": "Door Editor"
           }
         },
         "694": {
           "json": {
-            "value": "ExitDoor.glb_3"
+            "value": "Door Community Levels"
           }
         },
         "66228": {
           "json": {
-            "value": "ExitDoor.glb"
+            "value": "Door Levels"
           }
         }
       }
@@ -7727,24 +7541,6 @@
         "protocolBuffer": "PBTextShape"
       },
       "data": {
-        "688": {
-          "json": {
-            "text": "SELECT LEVEL",
-            "fontSize": 2.6,
-            "textColor": {
-              "r": 0.3,
-              "g": 0.9,
-              "b": 1,
-              "a": 1
-            },
-            "outlineWidth": 0.12,
-            "outlineColor": {
-              "r": 0.02,
-              "g": 0.05,
-              "b": 0.1
-            }
-          }
-        },
         "690": {
           "json": {
             "text": "LEADERBOARD\nComing soon",
@@ -7866,9 +7662,9 @@
         "serializationType": "map"
       },
       "data": {
-        "694": {
+        "0": {
           "json": {
-            "gizmo": 1
+            "gizmo": 0
           }
         }
       }
@@ -7942,7 +7738,6 @@
                   515,
                   516,
                   517,
-                  518,
                   519
                 ]
               },
@@ -8140,17 +7935,9 @@
                 ]
               },
               {
-                "entity": 518,
-                "children": [
-                  686,
-                  687
-                ]
-              },
-              {
                 "entity": 519,
                 "open": true,
                 "children": [
-                  688,
                   690,
                   691
                 ]
@@ -8820,18 +8607,6 @@
                 "children": []
               },
               {
-                "entity": 686,
-                "children": []
-              },
-              {
-                "entity": 687,
-                "children": []
-              },
-              {
-                "entity": 688,
-                "children": []
-              },
-              {
                 "entity": 689,
                 "children": []
               },
@@ -8893,9 +8668,6 @@
           "json": {}
         },
         "517": {
-          "json": {}
-        },
-        "518": {
           "json": {}
         },
         "519": {
@@ -9397,15 +9169,6 @@
           "json": {}
         },
         "685": {
-          "json": {}
-        },
-        "686": {
-          "json": {}
-        },
-        "687": {
-          "json": {}
-        },
-        "688": {
           "json": {}
         },
         "689": {
