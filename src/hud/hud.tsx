@@ -495,7 +495,7 @@ export const Hud = () => {
     <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
       {!session.inLobby && <TopBar />}
       {session.unlocked && session.hasDoor && !session.solved && !editor.open && <ExitBanner />}
-      {Date.now() < session.toastUntil && !session.inLobby && !editor.open && <ToastBanner />}
+      {Date.now() < session.toastUntil && !editor.open && <ToastBanner />}
       {!editor.open && <SideButtons />}
       {session.inLobby && !editor.open && !session.menuOpen && !myLevels.panelOpen && <PlayButton />}
       {session.codeOpen && <CodePanel />}
