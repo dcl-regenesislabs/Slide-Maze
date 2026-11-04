@@ -1,0 +1,2 @@
+Temporary PR to verify that the Linked issue check rejects a PR without a linked issue.
+Close this PR without merging after testing.
