@@ -595,21 +595,14 @@ const ExitBanner = () => {
   )
 }
 
-const PlayButton = () => (
-  <UiEntity uiTransform={{ positionType: 'absolute', position: { bottom: S(40), left: 0 }, width: '100%', height: S(64), justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
-    <PillButton id="play" label="PLAY" width={S(234)} height={S(60)} accent onClick={() => loadLevel(0)} />
-  </UiEntity>
-)
-
 export const Hud = () => {
   const showComplete = session.solved && Date.now() - session.finishedAt > COMPLETE_DELAY_MS
   return (
     <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
       {!session.inLobby && <TopBar />}
       {session.unlocked && session.hasDoor && !session.solved && !editor.open && <ExitBanner />}
-      {Date.now() < session.toastUntil && !session.inLobby && !editor.open && <ToastBanner />}
+      {Date.now() < session.toastUntil && !editor.open && <ToastBanner />}
       {!editor.open && <SideButtons />}
-      {session.inLobby && !editor.open && !session.menuOpen && !myLevels.panelOpen && <PlayButton />}
       {session.codeOpen && <CodePanel />}
       {soundPanel.open && <SoundPanel />}
       {session.menuOpen && <LevelMenu />}

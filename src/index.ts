@@ -5,6 +5,8 @@ import { setupEditor } from './game/editor'
 import { setupLevelStore } from './game/levelStore'
 import { setupWorld } from './game/world'
 import { setupHud } from './hud'
+import { setupLobbyDoors } from './game/lobbyDoors'
+import { setupPortalOverlay } from './hud/portalOverlay'
 
 export async function main() {
   if (isServer()) {
@@ -14,7 +16,9 @@ export async function main() {
     return
   }
   setupWorld()
+  setupLobbyDoors()
   setupEditor()
   setupLevelStore()
   setupHud()
+  setupPortalOverlay()
 }

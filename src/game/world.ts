@@ -1,14 +1,15 @@
 // The 3D side of the game (greybox look): spawns a level from data, detects the avatar pushing a block,
 // animates the slide, and tells the session when the level is solved. All the rules live in logic.ts.
 
-import { Animator, ColliderLayer, engine, ParticleSystem, PBParticleSystem_BlendMode, Entity, GltfContainer, GltfNodeModifiers, InputAction, InputModifier, Material, MaterialTransparencyMode, MeshCollider, MeshRenderer, PointerEvents, PointerEventType, pointerEventsSystem, Transform, TriggerArea, triggerAreaEventsSystem } from '@dcl/sdk/ecs'
+import { Animator, ColliderLayer, engine, ParticleSystem, PBParticleSystem_BlendMode, Entity, GltfContainer, InputAction, InputModifier, Material, MaterialTransparencyMode, MeshCollider, MeshRenderer, PointerEvents, PointerEventType, pointerEventsSystem, Transform, TriggerArea, triggerAreaEventsSystem } from '@dcl/sdk/ecs'
 import { Color3, Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { copyToClipboard, movePlayerTo, stopEmote, triggerSceneEmote } from '~system/RestrictedActions'
 import { FX_COLORS, clearFx, confetti, dust, holeBurst, plateOn, setupFx, stopBurst, trail, windStreak } from './fx'
 import { buildCave, buildLevelLights } from './cave'
 import { iceModel, slabEntity, SNOW_MODELS, snowModel, stoneModel } from './tiles'
 import { buildCeiling, buildCrystals, buildWallRing, ringAround } from './wallRing'
-import { buildLobby, LOBBY_SPAWN } from './lobby'
+import { LOBBY_SPAWN } from './lobby'
+import { exitGlow, setGlow } from './doorGlow'
 import { ARROW_DIR, DIRS, DIR_DELTA, Dir, FAN_DIR, Level, Pt } from './grid'
 import { LEVELS, levelCode } from './levels'
 import { GameState, blockAt, createState, isPlateCovered, isSolved, playerCanStand, push, reachable } from './logic'
@@ -16,6 +17,7 @@ import { solveFrom } from './solver'
 import { SFX, playSfx, preloadSfx, startMusic, startWind, stopWind } from './sfx'
 import { editor, progress, session } from './session'
 import { mobile } from '../hud/platform'
+import { beginPortalTransition } from './portalTransition'
 
 // ---- Tuning (metres, seconds) ----
 const TILE = 3 // one grid tile
@@ -674,11 +676,11 @@ export function teleportToStart() {
   if (!rt) return
   const l = rt.level
   const pos = rt.spawn ?? tileCentre(l.start, l, FLOOR_TOP + 0.1)
-  void movePlayerTo({
+  prevPlayer = null
+  return movePlayerTo({
     newRelativePosition: pos,
     cameraTarget: Vector3.create(ORIGIN.x, FLOOR_TOP + 1, ORIGIN.z)
   })
-  prevPlayer = null
 }
 
 /** Press the plate: the clip plays forward so fast that it snaps to the pressed pose. */
@@ -805,33 +807,6 @@ function blocker(r: Runtime, c: Vector3, o: { x: number; z: number }, lat: numbe
   r.entities.push(e)
   return e
 }
-
-/** Re-skin a model with its own base and emissive textures so the glow strength can be set from code (0 = dark). */
-function setGlow(e: Entity, base: string, emissive: string, intensity: number) {
-  GltfNodeModifiers.createOrReplace(e, {
-    modifiers: [
-      {
-        path: '',
-        material: {
-          material: {
-            $case: 'pbr',
-            pbr: {
-              albedoColor: Color4.White(),
-              texture: Material.Texture.Common({ src: base }),
-              emissiveTexture: Material.Texture.Common({ src: emissive }),
-              emissiveColor: Color3.White(),
-              emissiveIntensity: intensity,
-              metallic: 0,
-              roughness: 1
-            }
-          }
-        }
-      }
-    ]
-  })
-}
-
-const exitGlow = (e: Entity, intensity: number) => setGlow(e, 'assets/images/ExitDoor_base.png', 'assets/images/ExitDoor_emissive.png', intensity)
 
 /**
  * A gateway attached to the OUTSIDE of the level's border at `borderPt`, facing `side`: three stone tiles wide (the door models
@@ -990,20 +965,22 @@ export function restartLevel() {
 
 export function loadLevel(index: number) {
   buildLevel(LEVELS[index], index)
-  teleportToStart()
+  return teleportToStart()
 }
 
 /** Leave the current level and go back to the lobby. */
 export function returnToLobby() {
-  clearLevel()
-  clearFx()
-  session.inLobby = true
-  session.menuOpen = false
-  session.codeOpen = false
-  session.solved = false
-  session.levelIndex = 0
-  void movePlayerTo({ newRelativePosition: LOBBY_SPAWN, cameraTarget: Vector3.create(LOBBY_SPAWN.x, 2, LOBBY_SPAWN.z + 10) })
-  prevPlayer = null
+  beginPortalTransition(() => {
+    clearLevel()
+    clearFx()
+    session.inLobby = true
+    session.menuOpen = false
+    session.codeOpen = false
+    session.solved = false
+    session.levelIndex = 0
+    prevPlayer = null
+    return movePlayerTo({ newRelativePosition: LOBBY_SPAWN, cameraTarget: Vector3.create(LOBBY_SPAWN.x, 2, LOBBY_SPAWN.z + 10) })
+  })
 }
 
 /** Show a level that is not one of the shipped ones (the editor's working copy). Does not move the player. */
@@ -1413,7 +1390,7 @@ function playerFallSystem(dt: number) {
 export function setupWorld() {
   buildCave() // the dark cavern around everything
   buildLevelLights(ORIGIN, ELEV)
-  buildLobby() // the game starts in the lobby: no level is built until one is picked
+  // the lobby is authored in the scene (Creator Hub); its doors are wired by lobbyDoors.ts. No level is built until one is picked
   setupFx()
   preloadSfx()
   startMusic()
