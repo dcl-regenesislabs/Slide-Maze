@@ -17,7 +17,7 @@ import { solveFrom } from './solver'
 import { SFX, playSfx, preloadSfx, startMusic, startWind, stopWind } from './sfx'
 import { editor, progress, session } from './session'
 import { mobile } from '../hud/platform'
-import { beginPortalTransition } from './portalTransition'
+import { beginPortalTransition, portalTransition } from './portalTransition'
 
 // ---- Tuning (metres, seconds) ----
 const TILE = 3 // one grid tile
@@ -991,7 +991,7 @@ export function buildCustom(level: Level) {
 export const hasNextLevel = () => session.levelIndex >= 0 && session.levelIndex + 1 < LEVELS.length
 
 export function nextLevel() {
-  if (hasNextLevel()) loadLevel(session.levelIndex + 1)
+  if (hasNextLevel()) return loadLevel(session.levelIndex + 1)
 }
 
 export function toggleMenu() {
@@ -1244,8 +1244,18 @@ function completeLevel() {
 let advanceIn = 0
 function advanceSystem(dt: number) {
   if (advanceIn <= 0) return
+  // Let any current portal action finish before starting another transition.
+  if (portalTransition.active) return
   advanceIn -= dt
-  if (advanceIn <= 0) nextLevel()
+  if (advanceIn <= 0) {
+    const completed = rt
+    beginPortalTransition(() => {
+      // A restart or menu selection during the fade cancels the old exit.
+      if (rt !== completed || !session.solved || !session.advancing) return
+      // Return the teleport promise so the shared lobby fade holds until arrival.
+      return nextLevel()
+    })
+  }
 }
 
 function fmtTime(ms: number): string {
