@@ -6,6 +6,7 @@ import { setupLevelStore } from './game/levelStore'
 import { setupWorld } from './game/world'
 import { setupHud } from './hud'
 import { setupLobbyDoors } from './game/lobbyDoors'
+import { setupSoloArea } from './game/soloArea'
 import { setupPortalOverlay } from './hud/portalOverlay'
 
 export async function main() {
@@ -17,6 +18,7 @@ export async function main() {
   }
   setupWorld()
   setupLobbyDoors()
+  setupSoloArea()
   setupEditor()
   setupLevelStore()
   setupHud()
