@@ -57,12 +57,16 @@ export function setupHud() {
   })
   // The level select hides the toast and hint banners; hold their timers while it is open so they are not used up
   // behind it.
-  engine.addSystem((dt) => {
-    if (!session.menuOpen) return
+  // Measured on the same wall clock as the deadlines, so a long stay in the menu does not drift.
+  let heldAt = 0
+  engine.addSystem(() => {
     const now = Date.now()
-    const ms = dt * 1000
-    if (session.toastUntil > now) session.toastUntil += ms
-    if (session.hintUntil > now) session.hintUntil += ms
+    if (session.menuOpen && heldAt) {
+      const ms = now - heldAt
+      if (session.toastUntil > heldAt) session.toastUntil += ms
+      if (session.hintUntil > heldAt) session.hintUntil += ms
+    }
+    heldAt = session.menuOpen ? now : 0
   })
   // No canvas options: the SDK picks 1920x1080 (desktop) / 1600x720 (phone) and applies the device safe-area inset.
   ReactEcsRenderer.setUiRenderer(Hud)

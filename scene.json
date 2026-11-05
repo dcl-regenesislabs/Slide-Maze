@@ -126,7 +126,6 @@
   },
   "authoritativeMultiplayer": true,
   "worldConfiguration": {
-    "name": "thecodingcave.dcl.eth",
-    "fixedAdapter": "offline:offline"
+    "name": "thecodingcave.dcl.eth"
   }
 }
