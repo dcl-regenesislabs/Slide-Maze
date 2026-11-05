@@ -1,6 +1,6 @@
 import { CameraModeArea, CameraType, engine, InputAction, SkyboxTime, Transform, TouchScreenControls } from '@dcl/sdk/ecs'
 import { ReactEcsRenderer } from '@dcl/sdk/react-ecs'
-import { Hud } from './hud'
+import { Hud, options } from './hud'
 import { editor, session } from '../game/session'
 import { Vector3 } from '@dcl/sdk/math'
 import { mobile, resolvePlatform } from './platform'
@@ -21,19 +21,23 @@ export function setupHud() {
   ])
   // The interact (hand) button and the crosshair come back wherever the player has to aim and tap: in the editor (to place
   // tiles) and in the lobby (level terminal). They stay hidden while playing a level.
+  // Jump also goes while the Options menu is open, so it does not sit over the menu.
   let aiming: boolean | null = null
   let erasing: boolean | null = null
+  let menu: boolean | null = null
   const eraserIcon = { tex: { $case: 'texture' as const, texture: { src: 'assets/images/icon-eraser.png' } } }
   engine.addSystem(() => {
     const want = editor.open || session.inLobby
-    if (want === aiming && editor.open === erasing) return
+    if (want === aiming && editor.open === erasing && options.open === menu) return
     aiming = want
     erasing = editor.open
+    menu = options.open
     // Hand = IA_POINTER (place), eraser = IA_SECONDARY (the same action as F on desktop). The joystick and Jump stay.
     TouchScreenControls.createOrReplace(engine.RootEntity, {
       touchInputs: [
         { inputAction: InputAction.IA_POINTER, hide: !want },
         { inputAction: InputAction.IA_SECONDARY, hide: !editor.open, icon: eraserIcon },
+        { inputAction: InputAction.IA_JUMP, hide: options.open },
         { inputAction: InputAction.IA_PRIMARY, hide: true },
         { inputAction: InputAction.IA_ACTION_3, hide: true },
         { inputAction: InputAction.IA_ACTION_4, hide: true },
