@@ -103,9 +103,9 @@ const TopBar = () => {
 
 // Everything but the Options button is tucked away until it is tapped, so the corner stays clear of the phone's
 // native controls (joystick, jump) and the 3D view.
-let optionsOpen = false
+export const options = { open: false }
 const act = (fn: () => void) => () => {
-  optionsOpen = false
+  options.open = false
   fn()
 }
 
@@ -222,16 +222,14 @@ const SideButtons = () => {
   const itemW = S(170)
   const itemH = Math.round((itemW * 63) / 280)
   const gap = S(9)
-  const close = () => (optionsOpen = false)
+  // No Close entry (tapping Options again closes it) and no Editor entry (on hold for now).
   const items: MenuEntry[] = [
-    { id: 'm-close', file: 'menu_labeled/menu_close', label: 'Close', onClick: close },
     { id: 'menu', file: 'menu_labeled/menu_levels', label: 'Levels', onClick: act(toggleMenu) }
   ]
   if (!session.inLobby) items.push({ id: 'lobby', file: 'menu_labeled/menu_lobby', label: 'Lobby', onClick: act(returnToLobby) })
   if (!session.inLobby && !session.unlocked) items.push({ id: 'hint', file: 'menu_labeled/menu_hint', label: 'Hint', onClick: act(showHint) })
   if (!session.inLobby) items.push({ id: 'restart', file: 'menu_labeled/menu_restart', label: 'Restart', onClick: act(restartLevel) })
   if (!session.inLobby) items.push({ id: 'code', file: 'menu_labeled/menu_level_code', label: 'Level code', onClick: act(toggleCode) })
-  if (EDITOR_ENABLED && editorAvailable() && session.levelIndex >= 0) items.push({ id: 'edit', file: 'menu_labeled/menu_editor', label: 'Editor', onClick: act(openEditor) })
   const pad = S(12)
   const panelW = itemW + pad * 2
   const panelH = pad * 2 + items.length * itemH + (items.length - 1) * gap + S(4)
@@ -253,15 +251,15 @@ const SideButtons = () => {
         <PillButton
           id="options"
           label="Options"
-          sprite={optionsOpen ? 'buttons_labeled/btn_options_open' : 'buttons_labeled/btn_options'}
+          sprite={options.open ? 'buttons_labeled/btn_options_open' : 'buttons_labeled/btn_options'}
           width={S(150)}
           height={h}
           accent
-          onClick={() => (optionsOpen = !optionsOpen)}
+          onClick={() => (options.open = !options.open)}
           margin={m}
         />
       </UiEntity>
-      {optionsOpen ? (
+      {options.open ? (
         <UiEntity uiTransform={{ width: panelW, height: panelH, margin: { top: S(6) }, pointerFilter: 'none' }}>
           <Card width={panelW} height={panelH} pad={pad} justify="flex-start" block>
             {items.map((it, i) => (
@@ -601,14 +599,15 @@ export const Hud = () => {
   return (
     <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
       <UiTextureWarmer />
-      {!session.inLobby && <TopBar />}
-      {session.unlocked && session.hasDoor && !session.solved && !editor.open && <ExitBanner />}
-      {Date.now() < session.toastUntil && !editor.open && <ToastBanner />}
+      {/* The level select covers the play HUD: the top bar and its banners hide while it is open. */}
+      {!session.inLobby && !session.menuOpen && <TopBar />}
+      {session.unlocked && session.hasDoor && !session.solved && !editor.open && !session.menuOpen && <ExitBanner />}
+      {Date.now() < session.toastUntil && !editor.open && !session.menuOpen && <ToastBanner />}
       {!editor.open && <SideButtons />}
       {session.codeOpen && <CodePanel />}
       {soundPanel.open && <SoundPanel />}
       {session.menuOpen && <LevelMenu />}
-      {Date.now() < session.hintUntil && !session.inLobby && <HintBanner />}
+      {Date.now() < session.hintUntil && !session.inLobby && !session.menuOpen && <HintBanner />}
       {editor.open && <EditorUI />}
       {myLevels.panelOpen && <MyLevelsPanel />}
       {showComplete && !session.advancing && !editor.open && !session.codeOpen && !session.menuOpen && <CompletePanel />}

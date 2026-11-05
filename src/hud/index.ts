@@ -1,7 +1,9 @@
 import { CameraModeArea, CameraType, engine, InputAction, SkyboxTime, Transform, TouchScreenControls } from '@dcl/sdk/ecs'
 import { ReactEcsRenderer } from '@dcl/sdk/react-ecs'
-import { Hud } from './hud'
+import { Hud, options } from './hud'
 import { editor, session } from '../game/session'
+import { soundPanel } from '../game/sfx'
+import { myLevels } from '../game/levelStore'
 import { Vector3 } from '@dcl/sdk/math'
 import { mobile, resolvePlatform } from './platform'
 
@@ -21,19 +23,28 @@ export function setupHud() {
   ])
   // The interact (hand) button and the crosshair come back wherever the player has to aim and tap: in the editor (to place
   // tiles) and in the lobby (level terminal). They stay hidden while playing a level.
+  // Jump also goes while the Options menu or any full panel (level select, level code, My levels, sound) is open, so
+  // it does not sit over them.
   let aiming: boolean | null = null
   let erasing: boolean | null = null
+  let jumpHidden: boolean | null = null
   const eraserIcon = { tex: { $case: 'texture' as const, texture: { src: 'assets/images/icon-eraser.png' } } }
   engine.addSystem(() => {
+    // The Options menu lives in SideButtons, which unmounts in the editor; drop a stale open flag there so it cannot
+    // keep Jump hidden after the editor is opened from the lobby terminal.
+    if (editor.open) options.open = false
     const want = editor.open || session.inLobby
-    if (want === aiming && editor.open === erasing) return
+    const hideJump = options.open || session.menuOpen || session.codeOpen || myLevels.panelOpen || soundPanel.open
+    if (want === aiming && editor.open === erasing && hideJump === jumpHidden) return
     aiming = want
     erasing = editor.open
+    jumpHidden = hideJump
     // Hand = IA_POINTER (place), eraser = IA_SECONDARY (the same action as F on desktop). The joystick and Jump stay.
     TouchScreenControls.createOrReplace(engine.RootEntity, {
       touchInputs: [
         { inputAction: InputAction.IA_POINTER, hide: !want },
         { inputAction: InputAction.IA_SECONDARY, hide: !editor.open, icon: eraserIcon },
+        { inputAction: InputAction.IA_JUMP, hide: hideJump },
         { inputAction: InputAction.IA_PRIMARY, hide: true },
         { inputAction: InputAction.IA_ACTION_3, hide: true },
         { inputAction: InputAction.IA_ACTION_4, hide: true },
@@ -43,6 +54,19 @@ export function setupHud() {
       hideJoystick: false,
       hideCrosshair: !want
     })
+  })
+  // The level select hides the toast and hint banners; hold their timers while it is open so they are not used up
+  // behind it.
+  // Measured on the same wall clock as the deadlines, so a long stay in the menu does not drift.
+  let heldAt = 0
+  engine.addSystem(() => {
+    const now = Date.now()
+    if (session.menuOpen && heldAt) {
+      const ms = now - heldAt
+      if (session.toastUntil > heldAt) session.toastUntil += ms
+      if (session.hintUntil > heldAt) session.hintUntil += ms
+    }
+    heldAt = session.menuOpen ? now : 0
   })
   // No canvas options: the SDK picks 1920x1080 (desktop) / 1600x720 (phone) and applies the device safe-area inset.
   ReactEcsRenderer.setUiRenderer(Hud)
