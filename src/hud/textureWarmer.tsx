@@ -5,9 +5,12 @@ import { REV } from './sprites'
 // Same pattern as Marsh Colony's UiTextureWarmer (Lean, 91e0f2b): keep
 // real UiBackground references mounted so later panels use the UI texture cache.
 // Derive paths from the shared sprite catalogue, including hover/pressed states.
-// Example mockups are never drawn by the HUD and do not need to be loaded.
+// Example mockups are never drawn by the HUD and do not need to be loaded, nor are the Close / Editor menu entries
+// (removed from the Options menu for now).
+const UNUSED = ['menu_labeled/menu_close_', 'menu_labeled/menu_editor_']
 const UI_TEXTURES = Object.keys(SPRITE_SIZE)
   .filter((file) => !file.split('/').pop()!.startsWith('example_'))
+  .filter((file) => !UNUSED.some((prefix) => file.startsWith(prefix)))
   .map((file) => REV + file)
 
 const INVISIBLE = { r: 1, g: 1, b: 1, a: 0 }

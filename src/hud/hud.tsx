@@ -7,9 +7,9 @@ import { closeMyLevels, deleteMyLevel, loadMyLevel, myLevels, openMyLevels } fro
 import { EDITOR_ENABLED, editor, elapsedMs, isUnlocked, progress, session } from '../game/session'
 import { EditorUI, editorAvailable } from './editorPanel'
 import { Color4 } from '@dcl/sdk/math'
-import { UiTextureWarmer } from './textureWarmer'
 import { Card, FS, INK, OutlineLabel, PAL, PillButton, S, btnState, hover, isHovered, popFactor, popPress, press } from './theme'
 import { BTN, Digits, FramedSprite, Img, NineBg, Sparkles, TILE, TOAST, faceOf } from './sprites'
+import { UiTextureWarmer } from './textureWarmer'
 
 const hexBad = Color4.create(1, 0.54, 0.48, 1)
 
