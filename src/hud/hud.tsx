@@ -9,6 +9,7 @@ import { EditorUI, editorAvailable } from './editorPanel'
 import { Color4 } from '@dcl/sdk/math'
 import { Card, FS, INK, OutlineLabel, PAL, PillButton, S, btnState, hover, isHovered, popFactor, popPress, press } from './theme'
 import { BTN, Digits, FramedSprite, Img, NineBg, Sparkles, TILE, TOAST, faceOf } from './sprites'
+import { UiTextureWarmer } from './textureWarmer'
 
 const hexBad = Color4.create(1, 0.54, 0.48, 1)
 
@@ -599,6 +600,7 @@ export const Hud = () => {
   const showComplete = session.solved && Date.now() - session.finishedAt > COMPLETE_DELAY_MS
   return (
     <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
+      <UiTextureWarmer />
       {!session.inLobby && <TopBar />}
       {session.unlocked && session.hasDoor && !session.solved && !editor.open && <ExitBanner />}
       {Date.now() < session.toastUntil && !editor.open && <ToastBanner />}
