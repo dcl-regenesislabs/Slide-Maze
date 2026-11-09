@@ -108,6 +108,33 @@ export const Card = (props: {
   )
 }
 
+// The SDK has no text outline, so it is faked with ink copies of the text around the glyphs. Eight copies (sides +
+// corners) leave the diagonals √2 thicker and gaps between copies on big text, which reads as a jagged edge. Instead,
+// spread the copies evenly on a circle of radius o, close enough (about 1.5 px apart) that the edge stays smooth.
+const ringCache: Record<number, { left: number; top: number }[]> = {}
+function outlineRing(o: number) {
+  if (ringCache[o]) return ringCache[o]
+  // sample one eighth of the circle and mirror it, so rounding to whole pixels stays symmetric
+  const steps = Math.max(1, Math.ceil((o * Math.PI) / 4 / 1.5))
+  const seen: Record<string, boolean> = {}
+  const pts: { left: number; top: number }[] = []
+  for (let i = 0; i <= steps; i++) {
+    const a = (i / steps) * (Math.PI / 4)
+    const x = Math.round(Math.cos(a) * o)
+    const y = Math.round(Math.sin(a) * o)
+    for (const [l, t] of [[x, y], [y, x]]) {
+      for (const [sl, st] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+        const k = `${l * sl},${t * st}`
+        if (seen[k]) continue
+        seen[k] = true
+        pts.push({ left: l * sl, top: t * st })
+      }
+    }
+  }
+  pts.push({ left: 0, top: o * 2 }) // the solid drop shadow under the outline
+  return (ringCache[o] = pts)
+}
+
 /** Ink outline all around plus a solid drop shadow, like the sprite lettering. */
 export const OutlineLabel = (props: {
   value: string
@@ -121,17 +148,7 @@ export const OutlineLabel = (props: {
   const align = props.align ?? 'middle-center'
   const font = props.font ?? 'sans-serif'
   const o = Math.max(2, Math.round(props.fontSize / 11))
-  const offs = [
-    { left: -o, top: 0 },
-    { left: o, top: 0 },
-    { left: 0, top: -o },
-    { left: 0, top: o },
-    { left: -o, top: -o },
-    { left: o, top: -o },
-    { left: -o, top: o },
-    { left: o, top: o },
-    { left: 0, top: o * 2 }
-  ]
+  const offs = outlineRing(o)
   return (
     <UiEntity uiTransform={{ width: props.width, height: props.height, pointerFilter: 'none' }}>
       {offs.map((p, i) => (
