@@ -131,7 +131,7 @@ function outlineRing(o: number) {
       }
     }
   }
-  pts.push({ left: 0, top: o * 2 }) // the solid drop shadow under the outline
+  pts.push({ left: 0, top: o + 1 }) // a thin drop shadow just under the outline
   return (ringCache[o] = pts)
 }
 
@@ -147,7 +147,8 @@ export const OutlineLabel = (props: {
 }) => {
   const align = props.align ?? 'middle-center'
   const font = props.font ?? 'sans-serif'
-  const o = Math.max(2, Math.round(props.fontSize / 11))
+  // thin: 1 px on normal text, 2 px only on big titles. Thicker ink fills in small letters and looks muddy.
+  const o = Math.max(1, Math.round(props.fontSize / 20))
   const offs = outlineRing(o)
   return (
     <UiEntity uiTransform={{ width: props.width, height: props.height, pointerFilter: 'none' }}>
