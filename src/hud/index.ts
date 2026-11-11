@@ -1,3 +1,4 @@
+import { TOP_DOWN_OVERLAY_Z, setupTopDownOverlay } from './topDownOverlay'
 import { CameraModeArea, CameraType, engine, InputAction, SkyboxTime, Transform, TouchScreenControls } from '@dcl/sdk/ecs'
 import { ReactEcsRenderer } from '@dcl/sdk/react-ecs'
 import { Hud, options } from './hud'
@@ -73,7 +74,9 @@ export function setupHud() {
     heldAt = session.menuOpen ? now : 0
   })
   // No canvas options: the SDK picks 1920x1080 (desktop) / 1600x720 (phone) and applies the device safe-area inset.
-  ReactEcsRenderer.setUiRenderer(Hud)
+  // zIndex only orders it above the top-down overlay, which has its own full-screen renderer.
+  ReactEcsRenderer.setUiRenderer(Hud, { zIndex: TOP_DOWN_OVERLAY_Z + 1 })
+  setupTopDownOverlay()
   // Phones play in a fixed morning sky (09:00). Applied once, as soon as the platform lookup answers.
   let skySet = false
   engine.addSystem(() => {

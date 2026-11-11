@@ -1,4 +1,5 @@
-import ReactEcs, { UiEntity } from '@dcl/sdk/react-ecs'
+import ReactEcs, { ReactEcsRenderer, UiEntity } from '@dcl/sdk/react-ecs'
+import { engine } from '@dcl/sdk/ecs'
 import { Color4 } from '@dcl/sdk/math'
 import { DIR_DELTA, Dir } from '../game/grid'
 import { session } from '../game/session'
@@ -10,6 +11,14 @@ import { hover, isHovered, press, isPressed } from './theme'
 // The top-down view's controls, drawn over the 3D picture: a button over every cube (a thin ring; amber when selected)
 // and, around the selected one, an arrow on each side it can be pushed. Positions come from projecting the cubes through
 // the fixed camera (topDown.ts), in screen percentages so they hold on any screen size.
+//
+// It has its own renderer over the WHOLE screen (screenInset 'none'): toScreen() projects onto the full viewport, while
+// the main HUD is laid out in the device safe area, which on a phone with a notch is a smaller, differently shaped box.
+// It sits behind the HUD (lower zIndex) so the top bar and the Options menu stay on top of the rings.
+export const TOP_DOWN_OVERLAY_Z = 1
+export function setupTopDownOverlay() {
+  ReactEcsRenderer.addUiRenderer(engine.addEntity(), () => <TopDownOverlay />, { screenInset: 'none', zIndex: TOP_DOWN_OVERLAY_Z })
+}
 
 const RING = Color4.create(1, 1, 1, 0.55)
 const RING_HOVER = Color4.create(1, 1, 1, 0.95)

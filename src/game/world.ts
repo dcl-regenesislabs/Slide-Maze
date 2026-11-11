@@ -208,6 +208,9 @@ function trackPushEmote(dt: number) {
   if (pushEmoteLeft <= 0) endPushEmote(false)
 }
 
+/** True while a push emote holds the avatar frozen (its InputModifier is lifted when the clip ends). */
+export const pushEmoteActive = () => pushEmoteFrozen
+
 /** Give control back; with `cut` the clip is stopped too (level change), otherwise it has finished by itself. */
 function endPushEmote(cut: boolean) {
   if (!pushEmoteFrozen) return
@@ -1576,7 +1579,6 @@ export function completeFromTopDown() {
 
 /** Level geometry for placing the top-down camera and projecting tiles to the screen. */
 export const levelGeometry = () => ({ origin: ORIGIN, tile: TILE, floorTop: FLOOR_TOP, blockSize: BLOCK_SIZE })
-export const tileWorld = (p: Pt, y: number) => (rt ? tileCentre(p, rt.level, y) : Vector3.create(ORIGIN.x, y, ORIGIN.z))
 
 /** The tile the avatar stands on, if it is one the player can stand on inside the level. */
 export function avatarTile(): Pt | null {

@@ -20,3 +20,8 @@ README.md
 *.md
 src
 assets/images/revamp/_preview.png
+# sources of the baked menu sprites (not loaded at runtime)
+assets/images/revamp/icons/icon_sound_on.png
+assets/images/revamp/icons/icon_sound_off.png
+assets/images/revamp/icons/icon_top_down.png
+assets/images/revamp/icons/icon_view_3d.png

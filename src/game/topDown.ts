@@ -14,7 +14,7 @@ import { Quaternion, Vector3 } from '@dcl/sdk/math'
 import { DIRS, DIR_DELTA, Dir, Pt } from './grid'
 import { canReachExit, push, reachable } from './logic'
 import { session } from './session'
-import { avatarTile, completeFromTopDown, levelGen, levelGeometry, placeAvatarOn, playView, pushFromTopDown, topDownView } from './world'
+import { avatarTile, completeFromTopDown, levelGen, levelGeometry, placeAvatarOn, playView, pushEmoteActive, pushFromTopDown, topDownView } from './world'
 
 export { topDownView }
 
@@ -38,15 +38,17 @@ export function toggleTopDown() {
 function enterTopDown() {
   const view = playView()
   if (!view || session.inLobby) return
+  camera ??= engine.addEntity()
+  Transform.createOrReplace(camera, placeCamera())
+  VirtualCamera.createOrReplace(camera, { fov: FOV, defaultTransition: { transitionMode: VirtualCamera.Transition.Time(0.6) } })
+  // nothing else in the scene creates MainCamera, so it may not exist yet (getMutable would throw)
+  MainCamera.createOrReplace(engine.CameraEntity, { virtualCameraEntity: camera })
+  // only once the camera has switched: the HUD and the controls follow this flag
   topDownView.on = true
   topDownView.player = avatarTile() ?? view.level.start
   topDownUi.selected = -1
   seenGen = levelGen
   doorDone = false
-  camera ??= engine.addEntity()
-  Transform.createOrReplace(camera, placeCamera())
-  VirtualCamera.createOrReplace(camera, { fov: FOV, defaultTransition: { transitionMode: VirtualCamera.Transition.Time(0.6) } })
-  MainCamera.getMutable(engine.CameraEntity).virtualCameraEntity = camera
   freeze(true)
 }
 
@@ -56,7 +58,7 @@ export function exitTopDown() {
   topDownView.on = false
   topDownUi.selected = -1
   if (MainCamera.has(engine.CameraEntity)) MainCamera.getMutable(engine.CameraEntity).virtualCameraEntity = undefined
-  freeze(false)
+  if (!pushEmoteActive()) freeze(false)
   if (playView() && !session.inLobby) placeAvatarOn(topDownView.player)
 }
 

@@ -11,7 +11,6 @@ import { Color4 } from '@dcl/sdk/math'
 import { Card, FS, INK, OutlineLabel, PAL, PillButton, S, btnState, hover, isHovered, popFactor, popPress, press } from './theme'
 import { BTN, Digits, FramedSprite, Img, NineBg, REV, Sparkles, TILE, sizeOf } from './sprites'
 import { UiTextureWarmer } from './textureWarmer'
-import { TopDownOverlay } from './topDownOverlay'
 import { toggleTopDown, topDownView } from '../game/topDown'
 
 const hexBad = Color4.create(1, 0.54, 0.48, 1)
@@ -679,7 +678,6 @@ export const Hud = () => {
       <UiTextureWarmer />
       {/* The level select covers the play HUD: the top bar and its banners hide while it is open. */}
       {!session.inLobby && !session.menuOpen && <TopBar />}
-      <TopDownOverlay />
       {session.unlocked && session.hasDoor && !session.solved && !editor.open && !session.menuOpen && !topDownView.on && <ExitBanner />}
       {Date.now() < session.toastUntil && !editor.open && !session.menuOpen && <ToastBanner />}
       {!editor.open && <SideButtons />}
