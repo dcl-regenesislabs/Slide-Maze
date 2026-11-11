@@ -11,7 +11,7 @@ import { Level, parseLevel } from './grid'
 import { Edge, fillRect, flipHorizontal, flipVertical, growEdgeRows, rotateRight } from './editorOps'
 import { decodeLevelCode, encodeLevelCode } from './levelCode'
 import { solve } from './solver'
-import { editor, EditorTool, session } from './session'
+import { EDITOR_ENABLED, editor, EditorTool, session } from './session'
 
 // Undo / redo: a snapshot of the rows is taken before every change.
 const MAX_HISTORY = 100
@@ -176,6 +176,7 @@ export function setupEditor() {
 export const togglePanel = () => (editor.panelOpen = !editor.panelOpen)
 
 export function openEditor() {
+  if (!EDITOR_ENABLED) return // the editor is out of the game for now
   const lvl = activeLevel()
   const fromLobby = session.inLobby
   // a custom level (levelIndex -1) means we are already mid-edit: keep where the editor was first opened from

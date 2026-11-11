@@ -2,15 +2,15 @@
 // player comes close the runes light up and the doors swing open; walk away and they close and go dark again. Walking into
 // the open doorway does the door's job:
 //   Levels           -> the first unfinished level (regular play)
-//   Community levels -> levels made by the community (not built yet: a note for now)
-//   Editor           -> the level editor
+//   Community levels -> levels made by the community   } both out of the game for now (ENABLED below): their doors stay
+//   Editor           -> the level editor                } shut, dark and solid, and their signs are removed
 //
 // Finding the doors: by entity name ('Door Levels', 'Door Community Levels', 'Door Editor'), otherwise the three ExitDoor.glb
 // entities standing at ground level, left to right (west to east: community, levels, editor). The doors' own placement and
 // turn are never touched here, so they can be moved freely in the Hub: code only reads their transform.
 
-import { Animator, ColliderLayer, engine, Entity, GltfContainer, MeshCollider, Transform, TriggerArea, triggerAreaEventsSystem } from '@dcl/sdk/ecs'
-import { Quaternion, Vector3 } from '@dcl/sdk/math'
+import { Animator, ColliderLayer, engine, Entity, GltfContainer, MeshCollider, TextShape, Transform, TriggerArea, triggerAreaEventsSystem } from '@dcl/sdk/ecs'
+import { Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { exitGlow } from './doorGlow'
 import { openEditor } from './editor'
 import { LOBBY_CENTRE } from './lobby'
@@ -19,6 +19,10 @@ import { loadLevel } from './world'
 import { beginPortalTransition, portalTransition } from './portalTransition'
 
 const DOOR_MODEL = 'assets/models/ExitDoor.glb'
+/** Lilita One, the face the UI sprites are lettered in (Google Fonts, SIL OFL: assets/fonts/OFL.txt). */
+export const UI_FONT = 'assets/fonts/LilitaOne-Regular.ttf'
+const SIGN_FONT_SIZE = 4 // the door signs (the Hub has them at 2.6)
+const SIGN_OUTLINE = 0.07 // metres: how far the black outline reaches past the letters
 const OPEN_DIST = 6 // metres from the door at which it wakes up
 const CLOSE_DIST = 8.5 // metres at which it goes back to sleep (further out than OPEN_DIST, so it does not flicker at the edge)
 const GLOW_ON = 1.6
@@ -27,6 +31,9 @@ const OPEN_TIME = 1 // length of the DoorOpen clip in ExitDoor.glb
 
 type Role = 'levels' | 'community' | 'editor'
 const NAMES: Record<Role, string> = { levels: 'Door Levels', community: 'Door Community Levels', editor: 'Door Editor' }
+/** Which doors work. The others are kept as scenery: shut, dark, blocking, and with no sign over them. */
+const ENABLED: Record<Role, boolean> = { levels: true, community: false, editor: false }
+const SIGNS: Record<Role, string> = { levels: 'Sign Levels', community: 'Sign Community Levels', editor: 'Sign Editor' }
 
 interface LobbyDoor {
   role: Role
@@ -47,16 +54,14 @@ const actions: Record<Role, () => void | Promise<unknown>> = {
     const next = progress.findIndex((level) => !level.done)
     return loadLevel(next < 0 ? 0 : next)
   },
-  community: () => {
-    session.toastText = 'Community levels are coming soon!'
-    session.toastUntil = Date.now() + 3500
-  },
+  community: () => {}, // not built yet
   editor: () => openEditor()
 }
 
 function findDoors(): [Role, Entity][] {
   const named = (Object.keys(NAMES) as Role[]).map((r) => [r, engine.getEntityOrNullByName(NAMES[r])] as const)
-  if (named.every(([, e]) => e)) return named.map(([r, e]) => [r, e as Entity])
+  // any named door counts (one deleted in the Hub must not shuffle the others' roles)
+  if (named.some(([, e]) => e)) return named.filter(([, e]) => e).map(([r, e]) => [r, e as Entity])
   // fall back: every ground-level ExitDoor in the scene, west to east
   const found: { e: Entity; x: number }[] = []
   for (const [e, gltf] of engine.getEntitiesWith(GltfContainer, Transform)) {
@@ -69,8 +74,19 @@ function findDoors(): [Role, Entity][] {
 }
 
 export function setupLobbyDoors() {
+  for (const role of Object.keys(SIGNS) as Role[]) {
+    const sign = engine.getEntityOrNullByName(SIGNS[role])
+    if (!sign) continue
+    if (!ENABLED[role]) engine.removeEntity(sign)
+    // the signs are TextShapes placed in the Hub; give them the UI's lettering (sans-serif stays as the fallback)
+    else if (TextShape.has(sign)) styleSign(sign)
+  }
   for (const [role, entity] of findDoors()) {
     const t = Transform.get(entity)
+    if (!ENABLED[role]) {
+      shutForGood(entity, t)
+      continue
+    }
     // which way the door looks (+Z of the model) and which side of it the lobby is on; the doorway is on the other side
     const front = Vector3.rotate(Vector3.create(0, 0, 1), t.rotation)
     const toRoom = Vector3.subtract(LOBBY_CENTRE, t.position)
@@ -105,6 +121,37 @@ export function setupLobbyDoors() {
     doors.push(door)
   }
   engine.addSystem(lobbyDoorSystem, 6, 'sm-lobby-doors')
+}
+
+/**
+ * Door sign in the UI's lettering: Lilita One, bigger, with a thick black outline (no drop shadow).
+ * TextShape's own outline did not show on the explorer, so the outline is built the way the UI does it: black copies of
+ * the text nudged all around, just behind the letters (+Z is away from the reader).
+ */
+function styleSign(sign: Entity) {
+  const text = TextShape.getMutable(sign)
+  text.fontSrc = UI_FONT
+  text.fontSize = SIGN_FONT_SIZE
+  text.outlineWidth = 0
+  const o = SIGN_OUTLINE
+  const offsets: [number, number][] = [
+    [-o, 0], [o, 0], [0, -o], [0, o],
+    [-o * 0.7, -o * 0.7], [o * 0.7, -o * 0.7], [-o * 0.7, o * 0.7], [o * 0.7, o * 0.7]
+  ]
+  offsets.forEach(([x, y]) => {
+    const e = engine.addEntity()
+    Transform.create(e, { parent: sign, position: Vector3.create(x, y, 0.02) })
+    TextShape.create(e, { ...text, textColor: Color4.Black(), outlineWidth: 0 })
+  })
+}
+
+/** A door that is out of use: dark, held shut on the clip's first frame, with a solid gate in its doorway. */
+function shutForGood(entity: Entity, t: { position: Vector3; rotation: Quaternion }) {
+  exitGlow(entity, 0)
+  Animator.createOrReplace(entity, { states: [{ clip: 'DoorOpen', playing: true, loop: false, speed: 0, shouldReset: true }] })
+  const gate = engine.addEntity()
+  Transform.create(gate, { position: Vector3.create(t.position.x, t.position.y + 2.75, t.position.z), rotation: t.rotation, scale: Vector3.create(3, 5.5, 0.6) })
+  MeshCollider.setBox(gate, ColliderLayer.CL_PHYSICS)
 }
 
 function lobbyDoorSystem(dt: number) {
@@ -142,8 +189,7 @@ function lobbyDoorSystem(dt: number) {
     }
     if (session.inLobby && d.inside && !d.used && d.open >= 1 && !portalTransition.active) {
       d.used = true
-      if (d.role === 'community') actions.community()
-      else beginPortalTransition(actions[d.role])
+      beginPortalTransition(actions[d.role])
     }
     // the doorway is passable once the leaves are well apart
     const blocked = MeshCollider.has(d.gate)

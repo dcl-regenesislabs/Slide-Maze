@@ -22,6 +22,8 @@ export interface Session {
   toastUntil: number
   hintText: string // the message shown with a hint
   hintUntil: number // Date.now() until which the hint message is shown
+  runScore: number // points for the run just finished (official levels only), 0 = none
+  runNewBest: boolean // that run beat this level's best score
 }
 
 export const session: Session = {
@@ -42,16 +44,27 @@ export const session: Session = {
   toastText: '',
   toastUntil: 0,
   hintText: '',
-  hintUntil: 0
+  hintUntil: 0,
+  runScore: 0,
+  runNewBest: false
 }
 
-// Per-level progress, this session only. Saving it between visits comes with the leaderboard work.
+// Per-level progress, filled from the server's saved record (see levelStore.ts).
 export interface LevelProgress {
   done: boolean
   bestMoves: number // 0 = none yet
   bestTimeMs: number
+  bestScore: number // best points for this level (scored by the server, see score.ts), 0 = none yet
 }
-export const progress: LevelProgress[] = LEVELS.map(() => ({ done: false, bestMoves: 0, bestTimeMs: 0 }))
+export const progress: LevelProgress[] = LEVELS.map(() => ({ done: false, bestMoves: 0, bestTimeMs: 0, bestScore: 0 }))
+
+/** The leaderboard as last sent by the server: the top players, and this player's own total and place. */
+export const leaderboard = {
+  top: [] as { name: string; score: number }[],
+  myTotal: 0,
+  myRank: 0, // 1-based place on the board, 0 = not on it (yet)
+  updatedAt: 0 // Date.now() of the last update, 0 = nothing received yet
+}
 
 /** While building, every level is open so any of them can be tested. Set to false to enforce the locked state. */
 export const DEV_UNLOCK_ALL = true
@@ -61,7 +74,7 @@ export const isUnlocked = (i: number) => DEV_UNLOCK_ALL || i === 0 || progress[i
 // ---- Level editor state (the panel lives in hud/editorPanel.tsx, the actions in game/editor.ts) ----
 
 /** Dev switch. Later this becomes a wallet allowlist so players never see the editor. */
-export const EDITOR_ENABLED = true
+export const EDITOR_ENABLED = false
 
 export type EditorTool = '.' | '#' | 'O' | 'P' | 'S' | 'B' | '@' | 'N' | 'F' | 'E' | '^' | '>' | 'v' | '<' | 'u' | 'r' | 'd' | 'l'
 

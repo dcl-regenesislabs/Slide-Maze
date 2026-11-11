@@ -112,6 +112,8 @@ export const SPRITE_SIZE: Record<string, [number, number]> = {
   'menu_labeled/menu_level_code_hover.png': [584, 164],
   'menu_labeled/menu_level_code_normal.png': [584, 164],
   'menu_labeled/menu_level_code_pressed.png': [584, 164],
+  'buttons/button_sounds_off.png': [840, 211],
+  'buttons/button_sounds_on.png': [840, 211],
   'menu_labeled/menu_levels_hover.png': [584, 164],
   'menu_labeled/menu_levels_normal.png': [584, 164],
   'menu_labeled/menu_levels_pressed.png': [584, 164],

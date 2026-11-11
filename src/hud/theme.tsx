@@ -108,7 +108,7 @@ export const Card = (props: {
   )
 }
 
-/** Ink outline all around plus a solid drop shadow, like the sprite lettering. */
+/** Ink outline all around, like the sprite lettering (no drop shadow). */
 export const OutlineLabel = (props: {
   value: string
   fontSize: number
@@ -129,8 +129,7 @@ export const OutlineLabel = (props: {
     { left: -o, top: -o },
     { left: o, top: -o },
     { left: -o, top: o },
-    { left: o, top: o },
-    { left: 0, top: o * 2 }
+    { left: o, top: o }
   ]
   return (
     <UiEntity uiTransform={{ width: props.width, height: props.height, pointerFilter: 'none' }}>

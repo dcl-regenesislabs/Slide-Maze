@@ -1,7 +1,7 @@
 // The 3D side of the game (greybox look): spawns a level from data, detects the avatar pushing a block,
 // animates the slide, and tells the session when the level is solved. All the rules live in logic.ts.
 
-import { Animator, ColliderLayer, engine, ParticleSystem, PBParticleSystem_BlendMode, Entity, GltfContainer, InputAction, InputModifier, Material, MaterialTransparencyMode, MeshCollider, MeshRenderer, PointerEvents, PointerEventType, pointerEventsSystem, Transform, TriggerArea, triggerAreaEventsSystem } from '@dcl/sdk/ecs'
+import { Animator, AssetLoad, AvatarEmoteCommand, ColliderLayer, GltfContainerLoadingState, engine, ParticleSystem, PBParticleSystem_BlendMode, Entity, GltfContainer, InputAction, InputModifier, Material, MaterialTransparencyMode, MeshCollider, MeshRenderer, PointerEvents, PointerEventType, pointerEventsSystem, Transform, TriggerArea, triggerAreaEventsSystem } from '@dcl/sdk/ecs'
 import { Color3, Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { copyToClipboard, movePlayerTo, stopEmote, triggerSceneEmote } from '~system/RestrictedActions'
 import { FX_COLORS, clearFx, confetti, dust, holeBurst, plateOn, setupFx, stopBurst, trail, windStreak } from './fx'
@@ -14,6 +14,7 @@ import { ARROW_DIR, DIRS, DIR_DELTA, Dir, FAN_DIR, Level, Pt } from './grid'
 import { LEVELS, levelCode } from './levels'
 import { GameState, blockAt, createState, isPlateCovered, isSolved, playerCanStand, push, reachable } from './logic'
 import { solveFrom } from './solver'
+import { levelPar, levelScore } from './score'
 import { SFX, playSfx, preloadSfx, startMusic, startWind, stopWind } from './sfx'
 import { editor, progress, session } from './session'
 import { mobile } from '../hud/platform'
@@ -107,6 +108,7 @@ interface Runtime {
   fans: { x: number; z: number; fx: number; fz: number; len: number }[] // wind lanes, for the wind streaks
   spawn: Vector3 | null // where the player arrives (the entrance annex), or null = the start tile
   door: DoorState | null // the exit door
+  openings: { side: Dir; at: number }[] // gaps left in the perimeter walls for the annexes (x or z of the gap's centre)
   fills: { entity: Entity; t: number; toY: number }[] // floor tiles rising into filled pits
   slide: Slide | null
   bounce: { index: number; t: number; dx: number; dz: number; bx: number; bz: number } | null // dx, dz: the way the block was travelling; bx, bz: where it rests
@@ -139,21 +141,76 @@ let charge: { index: number; dir: Dir; t: number } | null = null
 const PUSH_EMOTE = 'assets/Animations/ShoulderPushFast_emote.glb' // original retimed 1.6x; exact on-disk path, case included
 const PUSH_EMOTE_LEN = 1.06 // clip length in seconds: 0.76 push + 0.3 eased blend into the rig's idle (Starting_Pose)
 const PUSH_UNLOCK_EARLY = 0 // give control back this long before the clip ends, so locomotion takes over while the emote is still finishing
+const PUSH_EMOTE_WAIT_MAX = 0.6 // longest wait for the explorer to report the clip started before the block slides anyway
 let pushEmoteFrozen = false // the InputModifier is on: walking into the block would otherwise cancel the emote
-let pushEmoteLeft = 0 // seconds until the clip is over and control is given back
+let pushEmoteLeft = 0 // seconds until the clip is over and control is given back (counts once the clip is playing)
+// The block's wind-up only runs once the clip is actually playing. Bevy can take a while to load and start a scene emote
+// (more so the first time), and the block used to slide before the shoulder push showed, leaving the emote in the air.
+let pushEmotePlaying = false
+let pushEmoteWaited = 0
+let emoteStampSeen = -1 // newest AvatarEmoteCommand timestamp already accounted for
 
-function startPushEmote() {
+const ES_STARTED = 0 // EmoteState.ES_STARTED (a const enum the SDK does not export); absent on older explorers
+
+/** Newest emote-started report for the local player, or -1. */
+function latestEmoteStart(): number {
+  if (!AvatarEmoteCommand.has(engine.PlayerEntity)) return -1
+  let newest = -1
+  for (const c of AvatarEmoteCommand.get(engine.PlayerEntity)) {
+    if ((c.state ?? ES_STARTED) === ES_STARTED && c.timestamp > newest) newest = c.timestamp
+  }
+  return newest
+}
+
+// The shoulder push leans the head forward. Bevy lets the avatar get closer to the block than mobile does, so the head
+// went into the cube; when it is nearer than this (metres from the face to the avatar's centre) it is eased back first.
+const PUSH_STANDOFF = 0.55
+
+/** Steps the avatar back to PUSH_STANDOFF from block `i`'s face if it is closer, facing the block. */
+function backOffFromBlock(i: number, dir: Dir) {
+  if (!rt) return
+  const p = Transform.get(engine.PlayerEntity).position
+  const c = Transform.get(rt.blocks[i]).position
+  const d = DIR_DELTA[dir]
+  const wx = d.x // grid y grows southward, world z grows northward
+  const wz = -d.y
+  const gap = (c.x - p.x) * wx + (c.z - p.z) * wz - BLOCK_SIZE / 2
+  if (gap >= PUSH_STANDOFF) return
+  const back = PUSH_STANDOFF - gap
+  const to = Vector3.create(p.x - wx * back, p.y, p.z - wz * back)
+  prevPlayer = null
+  void movePlayerTo({ newRelativePosition: to, avatarTarget: Vector3.create(c.x, p.y, c.z), duration: 0.12 })
+}
+
+function startPushEmote(i: number, dir: Dir) {
   if (pushEmoteFrozen) return
+  backOffFromBlock(i, dir)
   pushEmoteFrozen = true
+  pushEmotePlaying = false
+  pushEmoteWaited = 0
+  emoteStampSeen = latestEmoteStart()
   pushEmoteLeft = PUSH_EMOTE_LEN - PUSH_UNLOCK_EARLY
   InputModifier.createOrReplace(engine.PlayerEntity, { mode: InputModifier.Mode.Standard({ disableAll: true }) })
   void triggerSceneEmote({ src: PUSH_EMOTE, loop: false })
+}
+
+/** Marks the clip as playing once the explorer reports it (or the wait runs out). */
+function trackPushEmote(dt: number) {
+  if (!pushEmoteFrozen) return
+  if (!pushEmotePlaying) {
+    pushEmoteWaited += dt
+    if (latestEmoteStart() > emoteStampSeen || pushEmoteWaited >= PUSH_EMOTE_WAIT_MAX) pushEmotePlaying = true
+    return
+  }
+  pushEmoteLeft -= dt
+  if (pushEmoteLeft <= 0) endPushEmote(false)
 }
 
 /** Give control back; with `cut` the clip is stopped too (level change), otherwise it has finished by itself. */
 function endPushEmote(cut: boolean) {
   if (!pushEmoteFrozen) return
   pushEmoteFrozen = false
+  pushEmotePlaying = false
   pushEmoteLeft = 0
   InputModifier.deleteFrom(engine.PlayerEntity)
   if (cut) void stopEmote({})
@@ -298,7 +355,7 @@ function slideCube(r: Runtime, pos: Vector3): Entity {
   Transform.create(e, { position: pos })
   GltfContainer.create(e, { src: 'assets/models/SlideCube01.glb', visibleMeshesCollisionMask: ColliderLayer.CL_PHYSICS })
   setGlow(e, CUBE_BASE, CUBE_EMISSIVE, 0) // dark until it sits on a plate
-  blockGlow.set(e, { level: 0, pop: 0, shown: 0 })
+  blockGlow.set(e, { level: 0, pop: 0, shown: 0, loaded: false })
   r.entities.push(e)
   return e
 }
@@ -314,7 +371,9 @@ interface BlockGlow {
   level: number // 0..1 steady glow
   pop: number // 1 at the start of a pop, fades to 0
   shown: number // the intensity last sent to the model
+  loaded: boolean // the model has finished loading and its glow was sent again after that
 }
+const GLTF_FINISHED = 4 // LoadingState.FINISHED
 const blockGlow = new Map<Entity, BlockGlow>()
 
 function popBlock(e: Entity) {
@@ -327,9 +386,16 @@ function glowTick(dt: number) {
   rt.blocks.forEach((e, i) => {
     const g = blockGlow.get(e)
     if (!g) return
+    // The glow override sent when the cube was created can land before the model has loaded and be lost, leaving the
+    // model's own material (which glows) on screen; send it once more as soon as the model is in.
+    if (!g.loaded && GltfContainerLoadingState.getOrNull(e)?.currentState === GLTF_FINISHED) {
+      g.loaded = true
+      g.shown = -1
+    }
     const resting = !(rt!.slide && rt!.slide.index === i)
     const target = resting && rt!.plates.some((p) => blockAt(rt!.state, p.pt) === i) ? 1 : 0
     g.level += (target - g.level) * Math.min(1, dt * CUBE_GLOW_RATE)
+    if (Math.abs(target - g.level) < 0.01) g.level = target // land exactly on 0 / 1: the fade never gets there on its own
     g.pop = Math.max(0, g.pop - dt / CUBE_POP_TIME)
     const intensity = CUBE_GLOW_ON * g.level + CUBE_POP_PEAK * g.pop * g.pop
     if (Math.abs(intensity - g.shown) > 0.02 || (intensity === 0 && g.shown !== 0)) {
@@ -388,6 +454,7 @@ function buildLevel(level: Level, index: number) {
     fans: [],
     spawn: null,
     door: null,
+    openings: [],
     fills: [],
     slide: null,
     bounce: null,
@@ -461,6 +528,7 @@ function buildLevel(level: Level, index: number) {
 
   buildUnderside(r)
   buildEntrance(r)
+  buildPerimeter(r) // after the annexes, which leave their gaps in it
   // the cave around the game, sized to this level (the clear space inside is the level plus a gap, so corners never touch the slab):
   // walls, its own ceiling, and glowing crystals on the walls
   const ring = ringAround({ x: ORIGIN.x, z: ORIGIN.z }, (level.width * TILE) / 2, (level.height * TILE) / 2, WALL_GAP)
@@ -482,6 +550,9 @@ function buildLevel(level: Level, index: number) {
   session.startedAt = 0
   session.finishedAt = 0
   session.solved = false
+  session.runScore = 0
+  session.runNewBest = false
+  if (index >= 0) levelPar(index) // solve it now, while the level loads, so finishing it does not stall on the solver
   session.codeOpen = false
   session.menuOpen = false
   samples.length = 0
@@ -821,6 +892,7 @@ function buildAnnex(r: Runtime, borderPt: Pt, side: Dir, withDoor: boolean): Doo
   const cx = bc.x + o.x * TILE
   const cz = bc.z + o.z * TILE
   const spansX = o.z !== 0 // the opening faces along z, so it spans x
+  r.openings.push({ side, at: spansX ? cx : cz })
   const lateral = (lat: number) => Vector3.create(cx + (spansX ? lat : 0), 0, cz + (spansX ? 0 : lat))
   // a T of four stone tiles: a row of three along the border, and one more straight out past the door so the player walks through onto floor
   const tiles = [-1, 0, 1].map((k) => lateral(k * TILE))
@@ -864,6 +936,50 @@ function buildAnnex(r: Runtime, borderPt: Pt, side: Dir, withDoor: boolean): Doo
     })
   }
   return { entity: e, gate, zone, target: false, t: 0, started: false, open: 0, cx, cz }
+}
+
+// Invisible walls all round the level square: the player can no longer walk or jump off the sides (only holes drop you).
+// Blocks already stop at the map edge by the rules, so this is for the avatar only. Each annex (entrance, exit) leaves
+// a one-tile gap lined up with its middle tile. Tall enough that a jump, double jump or glide cannot clear it.
+const PERIMETER_HEIGHT = 10 // metres above the ice
+const PERIMETER_THICK = 0.6
+
+function buildPerimeter(r: Runtime) {
+  const level = r.level
+  const hw = (level.width * TILE) / 2
+  const hh = (level.height * TILE) / 2
+  const bottom = ELEV
+  const top = FLOOR_TOP + PERIMETER_HEIGHT
+  const sides: { side: Dir; spansX: boolean; fixed: number; half: number; base: number }[] = [
+    { side: 'N', spansX: true, fixed: ORIGIN.z + hh + PERIMETER_THICK / 2, half: hw, base: ORIGIN.x },
+    { side: 'S', spansX: true, fixed: ORIGIN.z - hh - PERIMETER_THICK / 2, half: hw, base: ORIGIN.x },
+    { side: 'E', spansX: false, fixed: ORIGIN.x + hw + PERIMETER_THICK / 2, half: hh, base: ORIGIN.z },
+    { side: 'W', spansX: false, fixed: ORIGIN.x - hw - PERIMETER_THICK / 2, half: hh, base: ORIGIN.z }
+  ]
+  for (const sd of sides) {
+    // the wall runs past both corners by its thickness so the corners are closed
+    const from = sd.base - sd.half - PERIMETER_THICK
+    const to = sd.base + sd.half + PERIMETER_THICK
+    const gaps = r.openings
+      .filter((g) => g.side === sd.side)
+      .map((g) => [g.at - TILE / 2, g.at + TILE / 2])
+      .sort((a, b) => a[0] - b[0])
+    let a = from
+    for (const [g0, g1] of [...gaps, [to, to]]) {
+      if (g0 - a > 0.01) {
+        const mid = (a + g0) / 2
+        const len = g0 - a
+        const e = engine.addEntity()
+        Transform.create(e, {
+          position: sd.spansX ? Vector3.create(mid, (bottom + top) / 2, sd.fixed) : Vector3.create(sd.fixed, (bottom + top) / 2, mid),
+          scale: sd.spansX ? Vector3.create(len, top - bottom, PERIMETER_THICK) : Vector3.create(PERIMETER_THICK, top - bottom, len)
+        })
+        MeshCollider.setBox(e, ColliderLayer.CL_PHYSICS)
+        r.entities.push(e)
+      }
+      a = Math.max(a, g1)
+    }
+  }
 }
 
 /** The border side a border tile is on, as the direction pointing out of the square. */
@@ -1222,6 +1338,10 @@ function completeLevel() {
   const ms = session.finishedAt - session.startedAt
   if (session.levelIndex >= 0) {
     const pr = progress[session.levelIndex]
+    // the same score the server will record (it scores the reported moves and time with score.ts too)
+    session.runScore = levelScore(levelPar(session.levelIndex), session.moves, ms)
+    session.runNewBest = session.runScore > pr.bestScore
+    pr.bestScore = Math.max(pr.bestScore, session.runScore)
     pr.done = true
     if (!pr.bestMoves || session.moves < pr.bestMoves) pr.bestMoves = session.moves
     if (!pr.bestTimeMs || ms < pr.bestTimeMs) pr.bestTimeMs = ms
@@ -1236,7 +1356,8 @@ function completeLevel() {
   if (rt.door && hasNextLevel()) {
     session.advancing = true
     advanceIn = 1.1
-    session.toastText = `Level ${session.levelIndex + 1} complete!   ${session.moves} ${session.moves === 1 ? 'move' : 'moves'}   ${fmtTime(ms)}`
+    const best = session.runNewBest ? '  New best!' : ''
+    session.toastText = `Level ${session.levelIndex + 1} complete!   ${session.moves} ${session.moves === 1 ? 'move' : 'moves'}   ${fmtTime(ms)}   +${session.runScore} pts${best}`
     session.toastUntil = Date.now() + 4500
   }
 }
@@ -1286,10 +1407,7 @@ function doorSystem(dt: number) {
 
 function pushSystem(dt: number) {
   clock += dt
-  if (pushEmoteFrozen) {
-    pushEmoteLeft -= dt
-    if (pushEmoteLeft <= 0) endPushEmote(false)
-  }
+  trackPushEmote(dt)
   if (!Transform.has(engine.PlayerEntity)) return
   const p = Transform.get(engine.PlayerEntity).position
 
@@ -1312,7 +1430,7 @@ function pushSystem(dt: number) {
       endCharge('cancel')
       return
     }
-    charge.t += dt
+    if (pushEmotePlaying || !pushEmoteFrozen) charge.t += dt
     pushEffort.progress = Math.min(1, charge.t / PUSH_WINDUP)
     dustT += dt
     if (dustT > 0.1) {
@@ -1339,7 +1457,7 @@ function pushSystem(dt: number) {
     for (const s of samples) best = Math.max(best, s.vx * wx + s.vz * wz)
     if (best >= PUSH_MIN_SPEED) {
       charge = { index: i, dir, t: 0 }
-      startPushEmote()
+      startPushEmote(i, dir)
       pushEffort.active = true
       pushEffort.progress = 0
       pushEffort.dir = dir
@@ -1403,6 +1521,8 @@ export function setupWorld() {
   // the lobby is authored in the scene (Creator Hub); its doors are wired by lobbyDoors.ts. No level is built until one is picked
   setupFx()
   preloadSfx()
+  // Fetch the push emote up front so its first use is not held up by the download.
+  AssetLoad.createOrReplace(engine.addEntity(), { assets: [PUSH_EMOTE] })
   startMusic()
   engine.addSystem(pushSystem, 9, 'sm-push')
   engine.addSystem(slideSystem, 8, 'sm-slide')

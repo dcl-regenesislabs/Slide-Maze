@@ -1,12 +1,13 @@
-// Runs on the headless server only. Stores each player's saved levels (as level codes) in Player Storage.
+// Runs on the headless server only. Stores each player's saved levels (as level codes) and progress in Player Storage,
+// scores finished levels (score.ts) and keeps the leaderboard in Scene Storage.
 // Every code is decoded and parsed here before it is stored, so storage only ever holds valid levels.
 
 import { Storage } from '@dcl/sdk/server'
 import { parseLevel } from '../game/grid'
 import { decodeLevelCode } from '../game/levelCode'
 import { LEVELS } from '../game/levels'
-import { solve } from '../game/solver'
-import { MAX_LEVEL_SIZE, MAX_NAME_LENGTH, MAX_SAVED_LEVELS, room } from '../shared/messages'
+import { levelPar, levelScore } from '../game/score'
+import { LEADERBOARD_SENT, LEADERBOARD_SIZE, MAX_LEVEL_SIZE, MAX_NAME_LENGTH, MAX_SAVED_LEVELS, room } from '../shared/messages'
 
 interface SavedLevel {
   id: string
@@ -18,10 +19,9 @@ interface SavedLevel {
 const KEY = 'levels'
 const PROGRESS_KEY = 'progress'
 
-type Progress = Record<string, { m: number; t: number }>
+type Progress = Record<string, { m: number; t: number; s?: number }> // s: best points (absent in records saved before scoring)
 
-const minPushes: number[] = [] // fewest possible pushes per level, from the solver (computed once, on first use)
-const fewestPushes = (i: number) => (minPushes[i] ??= solve(LEVELS[i]).pushes)
+const fewestPushes = levelPar // fewest possible pushes per level, from the solver (computed once, on first use)
 // A push takes at least the wind-up (0.6 s) before the block moves, so a result faster than this cannot be real.
 const MIN_MS_PER_PUSH = 600
 
@@ -47,6 +47,61 @@ async function loadLevels(address: string): Promise<SavedLevel[]> {
   }
 }
 
+/** Best points per level; records saved before scoring get points from their best moves and time. */
+function withScores(progress: Progress): Progress {
+  for (const key of Object.keys(progress)) {
+    const i = parseInt(key, 10)
+    const p = progress[key]
+    if (p.s === undefined && i >= 0 && i < LEVELS.length) p.s = levelScore(fewestPushes(i), p.m, p.t)
+  }
+  return progress
+}
+
+const totalScore = (progress: Progress) => Object.values(progress).reduce((sum, p) => sum + (p.s ?? 0), 0)
+
+// ---- Leaderboard ----
+// One Scene Storage key holds the top LEADERBOARD_SIZE players, best first. Every change goes through `boardQueue`, so two
+// players finishing at the same moment cannot overwrite each other's update.
+const BOARD_KEY = 'leaderboard'
+type BoardEntry = { a: string; n: string; s: number } // address, display name, total points
+let boardQueue: Promise<unknown> = Promise.resolve()
+
+/** The stored board, or null when it could not be read (then nothing must be written over it). */
+async function loadBoard(): Promise<BoardEntry[] | null> {
+  try {
+    const list = await Storage.get<BoardEntry[]>(BOARD_KEY)
+    return Array.isArray(list) ? list : []
+  } catch (e) {
+    console.log(`[SERVER] could not read the leaderboard: ${(e as Error).message}`)
+    return null
+  }
+}
+
+const cleanName = (name: string, address: string) => name.trim().slice(0, 24) || `${address.slice(0, 6)}...${address.slice(-4)}`
+
+/** Puts a player's total on the board (or updates it) and keeps it sorted and trimmed. Null if the board is unreadable. */
+function updateBoard(address: string, name: string, total: number): Promise<BoardEntry[] | null> {
+  const run = boardQueue.then(async () => {
+    const stored = await loadBoard()
+    if (!stored) return null
+    const board = stored.filter((e) => e.a !== address)
+    if (total > 0) board.push({ a: address, n: cleanName(name, address), s: total })
+    board.sort((x, y) => y.s - x.s)
+    board.length = Math.min(board.length, LEADERBOARD_SIZE)
+    if (!(await Storage.set(BOARD_KEY, board))) console.log('[SERVER] could not save the leaderboard')
+    return board
+  })
+  boardQueue = run.catch(() => undefined)
+  return run
+}
+
+function sendBoard(address: string, maybeBoard: BoardEntry[] | null, total: number) {
+  const board = maybeBoard ?? []
+  const rank = board.findIndex((e) => e.a === address) + 1
+  const json = JSON.stringify({ top: board.slice(0, LEADERBOARD_SENT).map((e) => ({ n: e.n, s: e.s })), me: total, rank })
+  room.send('leaderboardData', { json }, { to: [address] })
+}
+
 // Storage writes can fail silently (they resolve to false), so always report that to the player.
 const storeLevels = (address: string, list: SavedLevel[]) => Storage.player.set(address, KEY, JSON.stringify(list))
 
@@ -63,9 +118,21 @@ function reply(address: string, ok: boolean, message: string) {
 export function initServer() {
   console.log('[SERVER] Slide Maze server up')
 
-  room.onMessage('requestProgress', async (_data, context) => {
+  // Sent once when a player connects: their progress, and their place on the board (which also brings players who
+  // finished levels before scoring existed onto it).
+  room.onMessage('requestProgress', async (data, context) => {
     if (!context) return
-    room.send('progressData', { json: JSON.stringify(await loadProgress(context.from)) }, { to: [context.from] })
+    const address = context.from
+    const progress = withScores(await loadProgress(address))
+    room.send('progressData', { json: JSON.stringify(progress) }, { to: [address] })
+    const total = totalScore(progress)
+    sendBoard(address, total > 0 ? await updateBoard(address, data.name, total) : await loadBoard(), total)
+  })
+
+  room.onMessage('requestLeaderboard', async (_data, context) => {
+    if (!context) return
+    const address = context.from
+    sendBoard(address, await loadBoard(), totalScore(withScores(await loadProgress(address))))
   })
 
   // Clients report their own results, so check what can be checked: a real level, at least the optimal number of
@@ -79,13 +146,22 @@ export function initServer() {
       console.log(`[SERVER] rejected result from ${address} for level ${i}: ${data.moves} moves in ${data.timeMs} ms`)
       return
     }
-    const progress = await loadProgress(address)
+    const progress = withScores(await loadProgress(address))
     const old = progress[String(i)]
-    progress[String(i)] = { m: old ? Math.min(old.m, data.moves) : data.moves, t: old ? Math.min(old.t, data.timeMs) : data.timeMs }
+    // the score is for this run as a whole, so the best score is kept on its own (the best moves and best time may
+    // come from different runs)
+    const score = levelScore(fewestPushes(i), data.moves, data.timeMs)
+    progress[String(i)] = {
+      m: old ? Math.min(old.m, data.moves) : data.moves,
+      t: old ? Math.min(old.t, data.timeMs) : data.timeMs,
+      s: Math.max(old?.s ?? 0, score)
+    }
     if (!(await Storage.player.set(address, PROGRESS_KEY, JSON.stringify(progress)))) {
       console.log(`[SERVER] could not save progress for ${address}`)
     }
     room.send('progressData', { json: JSON.stringify(progress) }, { to: [address] })
+    const total = totalScore(progress)
+    sendBoard(address, await updateBoard(address, data.name, total), total)
   })
 
   room.onMessage('requestLevels', async (_data, context) => {

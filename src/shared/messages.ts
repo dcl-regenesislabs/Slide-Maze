@@ -10,13 +10,15 @@ export const Messages = {
   saveLevel: Schemas.Map({ name: Schemas.String, code: Schemas.String }),
   deleteLevel: Schemas.Map({ id: Schemas.String }),
   getLevel: Schemas.Map({ id: Schemas.String }),
-  requestProgress: Schemas.Map({ v: Schemas.Int }),
-  reportComplete: Schemas.Map({ level: Schemas.Int, moves: Schemas.Int, timeMs: Schemas.Int }),
+  requestProgress: Schemas.Map({ name: Schemas.String }), // name: shown on the leaderboard
+  reportComplete: Schemas.Map({ level: Schemas.Int, moves: Schemas.Int, timeMs: Schemas.Int, name: Schemas.String }),
+  requestLeaderboard: Schemas.Map({ v: Schemas.Int }),
   // server -> client (each message must stay well under 13 KB, so the list carries names only and codes come one by one)
   levelList: Schemas.Map({ json: Schemas.String }),
   levelData: Schemas.Map({ id: Schemas.String, name: Schemas.String, code: Schemas.String }),
   saveResult: Schemas.Map({ ok: Schemas.Boolean, message: Schemas.String }),
-  progressData: Schemas.Map({ json: Schemas.String }) // { "<level index>": { m: best moves, t: best time ms } }
+  progressData: Schemas.Map({ json: Schemas.String }), // { "<level index>": { m: best moves, t: best time ms, s: best points } }
+  leaderboardData: Schemas.Map({ json: Schemas.String }) // { top: [{ n: name, s: points }], me: total points, rank: 1-based or 0 }
 }
 
 export const room = registerMessages(Messages)
@@ -25,3 +27,5 @@ export const room = registerMessages(Messages)
 export const MAX_SAVED_LEVELS = 20
 export const MAX_NAME_LENGTH = 32
 export const MAX_LEVEL_SIZE = 31
+export const LEADERBOARD_SIZE = 100 // players kept on the board
+export const LEADERBOARD_SENT = 10 // of those, how many are sent to a client
