@@ -9,6 +9,7 @@
 // so a perfect run (fewest pushes, within par time) scores the full max, and any finish scores at least MIN_SHARE of it.
 
 import { LEVELS } from './levels'
+import { LEVEL_PARS } from './pars'
 import { solve } from './solver'
 
 export const SCORE = {
@@ -32,9 +33,13 @@ export function levelScore(par: number, moves: number, timeMs: number): number {
   return Math.round(max * share)
 }
 
-const pars: number[] = []
-/** Fewest pushes that solve official level `i` (from the solver, computed once per level, tens of ms). */
-export const levelPar = (i: number) => (pars[i] ??= solve(LEVELS[i]).pushes)
+const solved: number[] = []
+/**
+ * Fewest pushes that solve official level `i`, from the table baked by tools/pars.ts: the solver takes up to ~300 ms
+ * on a hard level (far more on a phone), too slow for a UI frame or the server's message handlers. Only a level missing
+ * from the table (LEVELS changed without regenerating it; tools/check.ts fails then) is solved here, once.
+ */
+export const levelPar = (i: number) => LEVEL_PARS[i] ?? (solved[i] ??= solve(LEVELS[i]).pushes)
 
 /** Stars for a level's best score: 0 = not finished, then 1 / 2 / 3 at STAR_SHARES of its max. */
 export const STAR_SHARES = [0.7, 0.9] // 2 stars from 70 % of the max, 3 from 90 %

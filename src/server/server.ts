@@ -7,6 +7,7 @@ import { parseLevel } from '../game/grid'
 import { decodeLevelCode } from '../game/levelCode'
 import { LEVELS } from '../game/levels'
 import { levelPar, levelScore } from '../game/score'
+import { cleanName, shortAddress } from '../shared/names'
 import { LEADERBOARD_SENT, LEADERBOARD_SIZE, MAX_LEVEL_SIZE, MAX_NAME_LENGTH, MAX_SAVED_LEVELS, room } from '../shared/messages'
 
 interface SavedLevel {
@@ -21,9 +22,11 @@ const PROGRESS_KEY = 'progress'
 
 type Progress = Record<string, { m: number; t: number; s?: number }> // s: best points (absent in records saved before scoring)
 
-const fewestPushes = levelPar // fewest possible pushes per level, from the solver (computed once, on first use)
-// A push takes at least the wind-up (0.6 s) before the block moves, so a result faster than this cannot be real.
-const MIN_MS_PER_PUSH = 600
+const fewestPushes = levelPar // fewest possible pushes per level (baked table, src/game/pars.ts)
+// Each push needs the wind-up against the face (0.35 s) plus the emote start and getting round to the next face, so a
+// result faster than this per push cannot be real. Kept below the fastest real play so no honest run is rejected; it
+// still cannot stop a forged report of par moves at a plausible time (that needs the moves replayed on the server).
+const MIN_MS_PER_PUSH = 1_000
 
 async function loadProgress(address: string): Promise<Progress> {
   const raw = await Storage.player.get<string>(address, PROGRESS_KEY)
@@ -77,28 +80,48 @@ async function loadBoard(): Promise<BoardEntry[] | null> {
   }
 }
 
-const cleanName = (name: string, address: string) => name.trim().slice(0, 24) || `${address.slice(0, 6)}...${address.slice(-4)}`
-
-/** Puts a player's total on the board (or updates it) and keeps it sorted and trimmed. Null if the board is unreadable. */
-function updateBoard(address: string, name: string, total: number): Promise<BoardEntry[] | null> {
+/** Runs a change to the stored board in the queue. The change returns false to skip the write. Null if unreadable. */
+function changeBoard(change: (board: BoardEntry[]) => boolean): Promise<BoardEntry[] | null> {
   const run = boardQueue.then(async () => {
-    const stored = await loadBoard()
-    if (!stored) return null
-    const board = stored.filter((e) => e.a !== address)
-    if (total > 0) board.push({ a: address, n: cleanName(name, address), s: total })
-    board.sort((x, y) => y.s - x.s)
-    board.length = Math.min(board.length, LEADERBOARD_SIZE)
-    if (!(await Storage.set(BOARD_KEY, board))) console.log('[SERVER] could not save the leaderboard')
+    const board = await loadBoard()
+    if (!board) return null
+    if (change(board) && !(await Storage.set(BOARD_KEY, board))) console.log('[SERVER] could not save the leaderboard')
     return board
   })
   boardQueue = run.catch(() => undefined)
   return run
 }
 
-function sendBoard(address: string, maybeBoard: BoardEntry[] | null, total: number) {
+/**
+ * Puts a player's total on the board (or updates it) and keeps it sorted and trimmed. An empty name (profile not loaded
+ * yet) keeps the name already on the board, and only a new entry falls back to the short address.
+ */
+const updateBoard = (address: string, name: string, total: number) =>
+  changeBoard((board) => {
+    const i = board.findIndex((e) => e.a === address)
+    const known = i >= 0 ? board[i].n : ''
+    if (i >= 0) board.splice(i, 1)
+    if (total > 0) board.push({ a: address, n: cleanName(name) || known || shortAddress(address), s: total })
+    board.sort((x, y) => y.s - x.s)
+    board.length = Math.min(board.length, LEADERBOARD_SIZE)
+    return true
+  })
+
+/** Fixes a player's name on the board when it changed (e.g. it went in as the short address before the profile loaded). */
+const renameOnBoard = (address: string, name: string) =>
+  changeBoard((board) => {
+    const entry = board.find((e) => e.a === address)
+    const n = cleanName(name)
+    if (!entry || !n || entry.n === n) return false
+    entry.n = n
+    return true
+  })
+
+// The rank comes from the board itself, so a refresh needs no Player Storage read.
+function sendBoard(address: string, maybeBoard: BoardEntry[] | null) {
   const board = maybeBoard ?? []
   const rank = board.findIndex((e) => e.a === address) + 1
-  const json = JSON.stringify({ top: board.slice(0, LEADERBOARD_SENT).map((e) => ({ n: e.n, s: e.s })), me: total, rank })
+  const json = JSON.stringify({ top: board.slice(0, LEADERBOARD_SENT).map((e) => ({ n: e.n, s: e.s })), rank })
   room.send('leaderboardData', { json }, { to: [address] })
 }
 
@@ -126,13 +149,14 @@ export function initServer() {
     const progress = withScores(await loadProgress(address))
     room.send('progressData', { json: JSON.stringify(progress) }, { to: [address] })
     const total = totalScore(progress)
-    sendBoard(address, total > 0 ? await updateBoard(address, data.name, total) : await loadBoard(), total)
+    sendBoard(address, total > 0 ? await updateBoard(address, data.name, total) : await loadBoard())
   })
 
-  room.onMessage('requestLeaderboard', async (_data, context) => {
+  // Periodic refresh. It also carries the name, so a board entry made before the profile loaded gets its real name.
+  room.onMessage('requestLeaderboard', async (data, context) => {
     if (!context) return
     const address = context.from
-    sendBoard(address, await loadBoard(), totalScore(withScores(await loadProgress(address))))
+    sendBoard(address, cleanName(data.name) ? await renameOnBoard(address, data.name) : await loadBoard())
   })
 
   // Clients report their own results, so check what can be checked: a real level, at least the optimal number of
@@ -160,8 +184,7 @@ export function initServer() {
       console.log(`[SERVER] could not save progress for ${address}`)
     }
     room.send('progressData', { json: JSON.stringify(progress) }, { to: [address] })
-    const total = totalScore(progress)
-    sendBoard(address, await updateBoard(address, data.name, total), total)
+    sendBoard(address, await updateBoard(address, data.name, totalScore(progress)))
   })
 
   room.onMessage('requestLevels', async (_data, context) => {

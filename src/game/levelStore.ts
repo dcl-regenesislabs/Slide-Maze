@@ -5,6 +5,7 @@ import { engine } from '@dcl/sdk/ecs'
 import { isStateSyncronized } from '@dcl/sdk/network'
 import { getPlayer } from '@dcl/sdk/players'
 import { MAX_NAME_LENGTH, room } from '../shared/messages'
+import { cleanName } from '../shared/names'
 import { editorCode, importIntoEditor, setEditorStatus } from './editor'
 import { editor, leaderboard, progress } from './session'
 import { setCompleteHandler } from './world'
@@ -56,9 +57,13 @@ export const deleteMyLevel = (id: string) => send(() => room.send('deleteLevel',
 // Results are reported to the server when a level is finished; the server scores them (score.ts), keeps the best per
 // level and sends the whole record back, which fills the level menu (done / best moves / points), then sends the
 // leaderboard. Reports wait here until the connection is ready.
-const myName = () => getPlayer()?.name ?? ''
+const myName = () => getPlayer()?.name?.trim() ?? ''
 const pendingReports: { level: number; moves: number; timeMs: number }[] = []
 let progressRequested = false
+let syncedAt = 0
+// The first request puts the player on the shared board under this name, so it waits for the profile to load; past
+// NAME_WAIT_MS it goes anyway (the board shows the short address, and the next refresh, which carries the name, fixes it).
+const NAME_WAIT_MS = 10_000
 
 export function reportCompletion(level: number, moves: number, timeMs: number) {
   pendingReports.push({ level, moves, timeMs })
@@ -67,6 +72,8 @@ export function reportCompletion(level: number, moves: number, timeMs: number) {
 function progressSystem() {
   if (!isStateSyncronized()) return
   if (!progressRequested) {
+    syncedAt ||= Date.now()
+    if (!myName() && Date.now() - syncedAt < NAME_WAIT_MS) return
     progressRequested = true
     room.send('requestProgress', { name: myName() })
   }
@@ -95,9 +102,8 @@ function applyProgress(json: string) {
 
 function applyLeaderboard(json: string) {
   try {
-    const data = JSON.parse(json) as { top: { n: string; s: number }[]; me: number; rank: number }
-    leaderboard.top = data.top.map((e) => ({ name: e.n, score: e.s }))
-    leaderboard.myTotal = data.me
+    const data = JSON.parse(json) as { top: { n: string; s: number }[]; rank: number }
+    leaderboard.top = data.top.map((e) => ({ name: cleanName(e.n), score: e.s }))
     leaderboard.myRank = data.rank
     leaderboard.updatedAt = Date.now()
   } catch {
@@ -108,7 +114,7 @@ function applyLeaderboard(json: string) {
 /** Ask for a fresh leaderboard (e.g. when its panel opens). False while the server is not connected yet. */
 export function refreshLeaderboard(): boolean {
   if (!isStateSyncronized()) return false
-  room.send('requestLeaderboard', { v: 1 })
+  room.send('requestLeaderboard', { name: myName() })
   return true
 }
 

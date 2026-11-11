@@ -58,10 +58,9 @@ export interface LevelProgress {
 }
 export const progress: LevelProgress[] = LEVELS.map(() => ({ done: false, bestMoves: 0, bestTimeMs: 0, bestScore: 0 }))
 
-/** The leaderboard as last sent by the server: the top players, and this player's own total and place. */
+/** The leaderboard as last sent by the server: the top players and this player's place (your total is summed locally). */
 export const leaderboard = {
   top: [] as { name: string; score: number }[],
-  myTotal: 0,
   myRank: 0, // 1-based place on the board, 0 = not on it (yet)
   updatedAt: 0 // Date.now() of the last update, 0 = nothing received yet
 }

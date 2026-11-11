@@ -6,6 +6,7 @@ import { parseLevel } from '../src/game/grid'
 import { decodeLevelCode, encodeLevelCode } from '../src/game/levelCode'
 import { fillRect, flipHorizontal, flipVertical, floodFill, growEdgeRows, rotateRight } from '../src/game/editorOps'
 import { LEVELS, levelCode } from '../src/game/levels'
+import { LEVEL_PARS } from '../src/game/pars'
 import { canReachExit, createState, isSolved, playerCanStand, push } from '../src/game/logic'
 import { solve, solveFrom } from './solver'
 
@@ -127,8 +128,10 @@ LEVELS.forEach((level, i) => {
   const tag = `level ${i + 1} "${level.name}"`
   ok(sol.solvable, `${tag} is solvable${sol.solvable ? ` in ${sol.pushes} pushes` : sol.truncated ? ' (search limit hit)' : ''}`)
   if (sol.solvable) console.log(`       ${sol.steps.map((s) => `${s.block.x},${s.block.y}${s.dir}`).join('  ')}`)
+  if (sol.solvable) ok(LEVEL_PARS[i] === sol.pushes, `${tag} par in src/game/pars.ts is ${LEVEL_PARS[i]} (run tools/pars.ts --write if not ${sol.pushes})`)
   console.log(`       ${levelCode(level)}`)
 })
+ok(LEVEL_PARS.length === LEVELS.length, `src/game/pars.ts has a par for each of the ${LEVELS.length} levels`)
 
 console.log('editor operations')
 {

@@ -12,13 +12,13 @@ export const Messages = {
   getLevel: Schemas.Map({ id: Schemas.String }),
   requestProgress: Schemas.Map({ name: Schemas.String }), // name: shown on the leaderboard
   reportComplete: Schemas.Map({ level: Schemas.Int, moves: Schemas.Int, timeMs: Schemas.Int, name: Schemas.String }),
-  requestLeaderboard: Schemas.Map({ v: Schemas.Int }),
+  requestLeaderboard: Schemas.Map({ name: Schemas.String }), // name: repairs a board entry made before the profile loaded
   // server -> client (each message must stay well under 13 KB, so the list carries names only and codes come one by one)
   levelList: Schemas.Map({ json: Schemas.String }),
   levelData: Schemas.Map({ id: Schemas.String, name: Schemas.String, code: Schemas.String }),
   saveResult: Schemas.Map({ ok: Schemas.Boolean, message: Schemas.String }),
   progressData: Schemas.Map({ json: Schemas.String }), // { "<level index>": { m: best moves, t: best time ms, s: best points } }
-  leaderboardData: Schemas.Map({ json: Schemas.String }) // { top: [{ n: name, s: points }], me: total points, rank: 1-based or 0 }
+  leaderboardData: Schemas.Map({ json: Schemas.String }) // { top: [{ n: name, s: points }], rank: 1-based or 0 }
 }
 
 export const room = registerMessages(Messages)

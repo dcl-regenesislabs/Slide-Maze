@@ -552,7 +552,6 @@ function buildLevel(level: Level, index: number) {
   session.solved = false
   session.runScore = 0
   session.runNewBest = false
-  if (index >= 0) levelPar(index) // solve it now, while the level loads, so finishing it does not stall on the solver
   session.codeOpen = false
   session.menuOpen = false
   samples.length = 0
