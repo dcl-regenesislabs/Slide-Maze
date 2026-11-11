@@ -117,6 +117,8 @@ interface Runtime {
 }
 
 let rt: Runtime | null = null
+/** Bumped every time a level is built (also on restart), so other modules can tell a fresh level from the one they knew. */
+export let levelGen = 0
 let active: { level: Level; index: number } = { level: LEVELS[0], index: 0 } // index -1 = a custom (editor) level
 let clock = 0
 const samples: { t: number; vx: number; vz: number }[] = []
@@ -462,6 +464,7 @@ function buildLevel(level: Level, index: number) {
     resetIn: 0
   }
   rt = r
+  levelGen++
 
   for (let y = 0; y < level.height; y++) {
     for (let x = 0; x < level.width; x++) {
@@ -549,6 +552,7 @@ function buildLevel(level: Level, index: number) {
   session.moves = 0
   session.startedAt = 0
   session.finishedAt = 0
+  session.completedAt = 0
   session.solved = false
   session.runScore = 0
   session.runNewBest = false
@@ -1027,7 +1031,8 @@ export function showHint() {
   // where the avatar stands, as a tile (falls back to the level start if it is not on a standable tile)
   const l = rt.level
   let from = l.start
-  if (Transform.has(engine.PlayerEntity)) {
+  if (topDownView.on) from = topDownView.player
+  else if (Transform.has(engine.PlayerEntity)) {
     const p = Transform.get(engine.PlayerEntity).position
     const t = { x: Math.floor((p.x - (ORIGIN.x - (l.width * TILE) / 2)) / TILE), y: Math.floor((ORIGIN.z + (l.height * TILE) / 2 - p.z) / TILE) }
     if (t.x >= 0 && t.y >= 0 && t.x < l.width && t.y < l.height && playerCanStand(rt.state, t)) from = t
@@ -1055,7 +1060,8 @@ export function showHint() {
   const st = l.tiles[stand.y]?.[stand.x]
   const lift = st === '#' || st === 'E' ? STEP_HEIGHT : 0 // stone ledges are raised: the ring would sink into them
   mark(tileCentre(stand, l, FLOOR_TOP + 0.06 + lift), Vector3.create(2.6, 0.06, 2.6)) // where to stand
-  say(`Hint: stand on the ring and push the marked block. ${sol.pushes} ${sol.pushes === 1 ? 'push' : 'pushes'} to go.`)
+  const togo = `${sol.pushes} ${sol.pushes === 1 ? 'push' : 'pushes'} to go.`
+  say(topDownView.on ? `Hint: push the marked block away from the ring. ${togo}` : `Hint: stand on the ring and push the marked block. ${togo}`)
 }
 
 function hintSystem() {
@@ -1315,6 +1321,8 @@ function finishSlide(after: GameState, bounce: boolean) {
   refreshPlates(true)
   if (isSolved(rt.state) && !session.unlocked && !session.solved) {
     session.unlocked = true
+    // the clock stops on the last block, not when the player reaches the exit door
+    session.finishedAt = Date.now()
     if (rt.door) {
       // every plate is covered: the door opens and the player walks through it to finish
       rt.door.target = true
@@ -1333,7 +1341,8 @@ export const setCompleteHandler = (fn: (index: number, moves: number, timeMs: nu
 function completeLevel() {
   if (!rt || session.solved) return
   session.solved = true
-  session.finishedAt = Date.now()
+  session.completedAt = Date.now()
+  if (!session.finishedAt) session.finishedAt = session.completedAt // levels finished without covering a plate (e.g. tests)
   const ms = session.finishedAt - session.startedAt
   if (session.levelIndex >= 0) {
     const pr = progress[session.levelIndex]
@@ -1352,7 +1361,7 @@ function completeLevel() {
   }
   if (rt.door) confetti(rt.door.cx, FLOOR_TOP, rt.door.cz)
   // walking through the door takes you on to the next level, with the result shown as a short toast there
-  if (rt.door && hasNextLevel()) {
+  if (rt.door && hasNextLevel() && !topDownView.on) {
     session.advancing = true
     advanceIn = 1.1
     const best = session.runNewBest ? '  New best!' : ''
@@ -1418,7 +1427,8 @@ function pushSystem(dt: number) {
 
   pushEffort.lastEvent = ''
   if (!rt) return
-  if (rt.cooldown > 0) rt.cooldown -= dt
+  if (rt.cooldown > 0) rt.cooldown -= dt // also in the top-down view: its pushes wait for the same cooldown
+  if (topDownView.on) return // pushes come from the top-down controls, the hidden avatar does nothing
   if (rt.slide || rt.cooldown > 0 || session.solved || session.unlocked || rt.resetIn > 0) {
     if (charge) endCharge('cancel')
     return
@@ -1505,6 +1515,7 @@ function playerFallSystem(dt: number) {
     if (rt.resetIn <= 0) restartLevel()
     return
   }
+  if (topDownView.on) return // the avatar is parked and hidden; it cannot fall
   if (!Transform.has(engine.PlayerEntity)) return
   const p = Transform.get(engine.PlayerEntity).position
   // The level floats ELEV metres up, so anything that drops well below the ice (a hole, an open pit, the outer edge)
@@ -1530,4 +1541,55 @@ export function setupWorld() {
   engine.addSystem(doorSystem, 6, 'sm-door')
   engine.addSystem(hintSystem, 5, 'sm-hint')
   engine.addSystem(advanceSystem, 5, 'sm-advance')
+}
+
+// ---- Top-down view (topDown.ts drives it; these are the hooks it needs into the running level) ----
+
+/** Top-down view state, shared with topDown.ts and the HUD. `player` is where the (hidden) player stands, as a tile. */
+export const topDownView = { on: false, player: { x: 0, y: 0 } as Pt }
+
+/** The running level as the top-down controls see it, or null between levels. */
+export function playView() {
+  if (!rt) return null
+  return {
+    level: rt.level,
+    state: rt.state,
+    blocks: rt.blocks.map((e) => Transform.get(e).position),
+    // a push cannot start now: a block is moving or settling, the level is over, or it is about to reset
+    busy: !!rt.slide || rt.cooldown > 0 || session.solved || session.unlocked || rt.resetIn > 0,
+    door: rt.door ? rt.door.open : -1 // how far the exit door has opened (0 - 1), -1 = no door
+  }
+}
+
+/** Push block `index` the way `dir` from the top-down controls. False if it could not start. */
+export function pushFromTopDown(index: number, dir: Dir): boolean {
+  if (!rt || rt.slide || rt.cooldown > 0 || session.solved || session.unlocked || rt.resetIn > 0) return false
+  if (!push(rt.state, index, dir).moved) return false
+  startPush(index, dir)
+  return true
+}
+
+/** Finish a door level from the top-down view (there is no avatar to walk out through the door). */
+export function completeFromTopDown() {
+  completeLevel()
+}
+
+/** Level geometry for placing the top-down camera and projecting tiles to the screen. */
+export const levelGeometry = () => ({ origin: ORIGIN, tile: TILE, floorTop: FLOOR_TOP, blockSize: BLOCK_SIZE })
+export const tileWorld = (p: Pt, y: number) => (rt ? tileCentre(p, rt.level, y) : Vector3.create(ORIGIN.x, y, ORIGIN.z))
+
+/** The tile the avatar stands on, if it is one the player can stand on inside the level. */
+export function avatarTile(): Pt | null {
+  if (!rt || !Transform.has(engine.PlayerEntity)) return null
+  const l = rt.level
+  const p = Transform.get(engine.PlayerEntity).position
+  const t = { x: Math.floor((p.x - (ORIGIN.x - (l.width * TILE) / 2)) / TILE), y: Math.floor((ORIGIN.z + (l.height * TILE) / 2 - p.z) / TILE) }
+  return t.x >= 0 && t.y >= 0 && t.x < l.width && t.y < l.height && playerCanStand(rt.state, t) ? t : null
+}
+
+/** Put the avatar on a tile (leaving the top-down view), looking at the level centre. */
+export function placeAvatarOn(t: Pt) {
+  if (!rt) return
+  prevPlayer = null
+  return movePlayerTo({ newRelativePosition: tileCentre(t, rt.level, FLOOR_TOP + 0.1), cameraTarget: Vector3.create(ORIGIN.x, FLOOR_TOP + 1, ORIGIN.z) })
 }

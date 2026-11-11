@@ -11,6 +11,8 @@ import { Color4 } from '@dcl/sdk/math'
 import { Card, FS, INK, OutlineLabel, PAL, PillButton, S, btnState, hover, isHovered, popFactor, popPress, press } from './theme'
 import { BTN, Digits, FramedSprite, Img, NineBg, REV, Sparkles, TILE, sizeOf } from './sprites'
 import { UiTextureWarmer } from './textureWarmer'
+import { TopDownOverlay } from './topDownOverlay'
+import { toggleTopDown, topDownView } from '../game/topDown'
 
 const hexBad = Color4.create(1, 0.54, 0.48, 1)
 
@@ -243,9 +245,9 @@ const SideButtons = () => {
   if (!session.inLobby && !session.unlocked) items.push({ id: 'hint', file: 'menu_labeled/menu_hint', label: 'Hint', onClick: act(showHint) })
   if (!session.inLobby) items.push({ id: 'restart', file: 'menu_labeled/menu_restart', label: 'Restart', onClick: act(restartLevel) })
   if (!session.inLobby) items.push({ id: 'code', file: 'menu_labeled/menu_level_code', label: 'Level code', onClick: act(toggleCode) })
+  if (!session.inLobby) items.push({ id: 'topdown', file: topDownView.on ? 'menu_labeled/menu_3d_view' : 'menu_labeled/menu_top_down_view', label: topDownView.on ? '3D view' : 'Top-down view', onClick: act(toggleTopDown) })
   // the sound controls live in the menu (a round button beside Options overlapped the top bar on phones)
-  const soundImg = sfx.muted ? 'buttons/button_sounds_off.png' : 'buttons/button_sounds_on.png'
-  items.push({ id: 'sound', image: { file: soundImg, all: ['buttons/button_sounds_on.png', 'buttons/button_sounds_off.png'] }, label: 'Sounds', onClick: act(() => (soundPanel.open = !soundPanel.open)) })
+  items.push({ id: 'sound', file: sfx.muted ? 'menu_labeled/menu_sounds_off' : 'menu_labeled/menu_sounds_on', label: 'Sounds', onClick: act(() => (soundPanel.open = !soundPanel.open)) })
   const pad = S(12)
   const panelW = itemW + pad * 2
   const panelH = pad * 2 + items.length * itemH + (items.length - 1) * gap + S(4)
@@ -671,13 +673,14 @@ const ExitBanner = () => (
 )
 
 export const Hud = () => {
-  const showComplete = session.solved && Date.now() - session.finishedAt > COMPLETE_DELAY_MS
+  const showComplete = session.solved && Date.now() - session.completedAt > COMPLETE_DELAY_MS
   return (
     <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
       <UiTextureWarmer />
       {/* The level select covers the play HUD: the top bar and its banners hide while it is open. */}
       {!session.inLobby && !session.menuOpen && <TopBar />}
-      {session.unlocked && session.hasDoor && !session.solved && !editor.open && !session.menuOpen && <ExitBanner />}
+      <TopDownOverlay />
+      {session.unlocked && session.hasDoor && !session.solved && !editor.open && !session.menuOpen && !topDownView.on && <ExitBanner />}
       {Date.now() < session.toastUntil && !editor.open && !session.menuOpen && <ToastBanner />}
       {!editor.open && <SideButtons />}
       {session.codeOpen && <CodePanel />}

@@ -10,7 +10,8 @@ export interface Session {
   code: string // level code of the loaded level
   moves: number
   startedAt: number // Date.now() of the first push, 0 = not started yet
-  finishedAt: number // Date.now() when the last plate was covered, 0 = not solved
+  finishedAt: number // Date.now() when the last plate was covered (the clock stops here), 0 = not yet
+  completedAt: number // Date.now() when the level was finished (through the exit door, if it has one), 0 = not yet
   unlocked: boolean // every plate is covered: the exit door (if any) is open and the blocks are frozen
   hasDoor: boolean // the loaded level has an exit door
   solved: boolean // the level is finished (a level with a door finishes when the player walks through it)
@@ -34,6 +35,7 @@ export const session: Session = {
   moves: 0,
   startedAt: 0,
   finishedAt: 0,
+  completedAt: 0,
   unlocked: false,
   hasDoor: false,
   solved: false,

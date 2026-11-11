@@ -1,6 +1,7 @@
 import { CameraModeArea, CameraType, engine, InputAction, SkyboxTime, Transform, TouchScreenControls } from '@dcl/sdk/ecs'
 import { ReactEcsRenderer } from '@dcl/sdk/react-ecs'
 import { Hud, options } from './hud'
+import { topDownView } from '../game/topDown'
 import { editor, session } from '../game/session'
 import { soundPanel } from '../game/sfx'
 import { myLevels } from '../game/levelStore'
@@ -28,14 +29,17 @@ export function setupHud() {
   let aiming: boolean | null = null
   let erasing: boolean | null = null
   let jumpHidden: boolean | null = null
+  let joystickHidden: boolean | null = null
   const eraserIcon = { tex: { $case: 'texture' as const, texture: { src: 'assets/images/icon-eraser.png' } } }
   engine.addSystem(() => {
     // The Options menu lives in SideButtons, which unmounts in the editor; drop a stale open flag there so it cannot
     // keep Jump hidden after the editor is opened from the lobby terminal.
     if (editor.open) options.open = false
     const want = editor.open || session.inLobby
-    const hideJump = options.open || session.menuOpen || session.codeOpen || myLevels.panelOpen || soundPanel.open
-    if (want === aiming && editor.open === erasing && hideJump === jumpHidden) return
+    // the top-down view has no avatar to move: no joystick, no jump
+    const hideJump = options.open || session.menuOpen || session.codeOpen || myLevels.panelOpen || soundPanel.open || topDownView.on
+    if (want === aiming && editor.open === erasing && hideJump === jumpHidden && topDownView.on === joystickHidden) return
+    joystickHidden = topDownView.on
     aiming = want
     erasing = editor.open
     jumpHidden = hideJump
@@ -51,7 +55,7 @@ export function setupHud() {
         { inputAction: InputAction.IA_ACTION_5, hide: true },
         { inputAction: InputAction.IA_ACTION_6, hide: true }
       ],
-      hideJoystick: false,
+      hideJoystick: topDownView.on,
       hideCrosshair: !want
     })
   })
