@@ -5,10 +5,11 @@ import { music, setMusicVolume, setSfxVolume, sfx, soundPanel, toggleMusicMute, 
 import { openEditor } from '../game/editor'
 import { closeMyLevels, deleteMyLevel, loadMyLevel, myLevels, openMyLevels } from '../game/levelStore'
 import { EDITOR_ENABLED, editor, elapsedMs, isUnlocked, progress, session } from '../game/session'
+import { starsFor } from '../game/score'
 import { EditorUI, editorAvailable } from './editorPanel'
 import { Color4 } from '@dcl/sdk/math'
 import { Card, FS, INK, OutlineLabel, PAL, PillButton, S, btnState, hover, isHovered, popFactor, popPress, press } from './theme'
-import { BTN, Digits, FramedSprite, Img, NineBg, Sparkles, TILE, TOAST, faceOf } from './sprites'
+import { BTN, Digits, FramedSprite, Img, NineBg, REV, Sparkles, TILE, sizeOf } from './sprites'
 import { UiTextureWarmer } from './textureWarmer'
 
 const hexBad = Color4.create(1, 0.54, 0.48, 1)
@@ -36,7 +37,7 @@ const HudSlab = (props: { w: number; h: number }) => {
  * HUD slab (hud/hud_stat_*.png). The caption is a baked sprite (MOVES / TIME / LEVEL n) or outlined text; the value is
  * drawn with the digit sprites when it is a number or a time, otherwise with outlined text (level names).
  */
-const StatPill = (props: { caption: string; captionFile?: string; captionNum?: string; value: string; digits?: boolean; width: number; id?: string }) => {
+const StatPill = (props: { caption: string; captionFile?: string; captionNum?: string; value: string; digits?: boolean; gap?: number; width: number; id?: string }) => {
   const k = props.id ? popFactor(props.id) : 1
   const h = S(56)
   const capH = Math.round(h * 0.3)
@@ -63,7 +64,7 @@ const StatPill = (props: { caption: string; captionFile?: string; captionNum?: s
         {props.captionNum ? <Digits text={props.captionNum} h={Math.round(capH * 0.95)} /> : null}
       </UiEntity>
       {props.digits ? (
-        <Digits text={props.value} h={valH} margin={{ top: -Math.round(h * 0.04) }} />
+        <Digits text={props.value} h={valH} gap={props.gap} margin={{ top: -Math.round(h * 0.04) }} />
       ) : (
         <OutlineLabel value={props.value} fontSize={FS(22)} color={PAL.text} width={props.width - S(16)} height={valH} />
       )}
@@ -71,11 +72,23 @@ const StatPill = (props: { caption: string; captionFile?: string; captionNum?: s
   )
 }
 
+/** Points over all official levels: the sum of each level's best (the leaderboard total, kept locally so it updates the
+ * moment a level is finished, before the server answers). */
+const totalPoints = () => progress.reduce((sum, p) => sum + p.bestScore, 0)
+/** Thousands split by a thin gap, since the digit sprites have no comma: 12340 -> "12 340". */
+const spacedDigits = (n: number) => `${n}`.replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
+
 let lastMoves = 0
+let lastPoints = -1
 const TopBar = () => {
   if (session.moves !== lastMoves) {
     lastMoves = session.moves
     popPress('moves')
+  }
+  const points = totalPoints()
+  if (points !== lastPoints) {
+    if (lastPoints >= 0) popPress('points')
+    lastPoints = points
   }
   return (
     <UiEntity
@@ -97,6 +110,7 @@ const TopBar = () => {
         <StatPill caption="LEVEL" captionFile="hud/label_level.png" captionNum={` ${session.levelIndex + 1}`} value={session.name} width={S(220)} />
       )}
       <StatPill caption="TIME" captionFile="hud/label_time.png" value={fmtTime(elapsedMs())} digits width={S(120)} />
+      <StatPill id="points" caption="POINTS" value={spacedDigits(points)} digits gap={0.06} width={S(130)} />
     </UiEntity>
   )
 }
@@ -107,35 +121,6 @@ export const options = { open: false }
 const act = (fn: () => void) => () => {
   options.open = false
   fn()
-}
-
-/** Round speaker button (same icons as the other scenes' sound button): opens the sound panel; red when effects are muted. */
-const SoundButton = (props: { size: number; margin?: { bottom?: number; right?: number } }) => {
-  const id = 'sound'
-  const hov = isHovered(id)
-  const k = popFactor(id, 0.08)
-  const size = Math.round(props.size * k)
-  const border = Math.max(2, S(3))
-  return (
-    <UiEntity
-      uiTransform={{ width: size, height: size, margin: props.margin, padding: border, borderRadius: size / 2, pointerFilter: 'block' }}
-      uiBackground={{ color: INK }}
-      onMouseDown={() => {
-        popPress(id)
-        soundPanel.open = !soundPanel.open
-      }}
-      {...hover(id)}
-    >
-      <UiEntity
-        uiTransform={{ width: '100%', height: '100%', borderRadius: size / 2 - border, pointerFilter: 'none' }}
-        uiBackground={{
-          color: sfx.muted ? PAL.badDark : hov ? PAL.rim : PAL.panelHi,
-          texture: { src: sfx.muted ? 'assets/images/SoundOff.png' : 'assets/images/SoundOn.png' },
-          textureMode: 'stretch'
-        }}
-      />
-    </UiEntity>
-  )
 }
 
 const VOLUME_STEPS = [0, 25, 50, 75, 100]
@@ -187,9 +172,10 @@ const SoundPanel = () => {
   )
 }
 
-type MenuEntry = { id: string; file?: string; label: string; onClick: () => void }
+// `image`: a whole-button picture made outside the sprite kit (no frame margins, one state), e.g. the Sounds button.
+type MenuEntry = { id: string; file?: string; icon?: string; image?: { file: string; all: string[] }; label: string; onClick: () => void }
 
-/** One row of the Options menu: a baked sprite (icon + label) or, for entries without one, a blank pill + text. */
+/** One row of the Options menu: a baked sprite (icon + label) or, for entries without one, a blank pill + icon + text. */
 const MenuItem = (props: { item: MenuEntry; w: number; h: number; margin?: { bottom?: number }; key?: string }) => {
   const { item } = props
   const state = btnState(item.id)
@@ -201,6 +187,24 @@ const MenuItem = (props: { item: MenuEntry; w: number; h: number; margin?: { bot
     },
     ...hover(item.id)
   }
+  if (item.image) {
+    // its outline starts at the image's edge, so the image spans the item's width; it has no hover / pressed frames, so a
+    // press nudges it down instead. Every variant stays mounted (only the current one opaque) so a swap never flashes.
+    const [iw, ih] = sizeOf(item.image.file)
+    const h = Math.round((props.w * ih) / iw)
+    const dy = st === 'pressed' ? Math.round(props.h * 0.06) : 0
+    return (
+      <UiEntity uiTransform={{ width: props.w, height: props.h, margin: props.margin, pointerFilter: 'block' }} {...events}>
+        {item.image.all.map((f) => (
+          <UiEntity
+            key={f}
+            uiTransform={{ positionType: 'absolute', position: { top: dy, left: 0 }, width: props.w, height: h, pointerFilter: 'none' }}
+            uiBackground={{ texture: { src: REV + f }, textureMode: 'stretch', color: f === item.image!.file ? Color4.White() : Color4.create(1, 1, 1, 0) }}
+          />
+        ))}
+      </UiEntity>
+    )
+  }
   if (item.file) {
     const states = ['normal', 'hover', 'pressed'].map((s) => `${item.file}_${s}.png`)
     return <FramedSprite file={`${item.file}_${st}.png`} states={states} geo={BTN} w={props.w} h={props.h} margin={props.margin} block {...events} />
@@ -209,7 +213,16 @@ const MenuItem = (props: { item: MenuEntry; w: number; h: number; margin?: { bot
   return (
     <UiEntity uiTransform={{ width: props.w, height: props.h, margin: props.margin, pointerFilter: 'block' }} {...events}>
       <NineBg file={`menu/menuitem_default_${st}.png`} geo={BTN} l={38} r={38} t={0} b={0} u={u} />
-      <UiEntity uiTransform={{ width: '100%', height: props.h, position: { top: st === 'pressed' ? Math.round(4 * u) : -Math.round(u) }, padding: { left: Math.round(64 * u) }, pointerFilter: 'none' }}>
+      <UiEntity
+        uiTransform={{ width: '100%', height: props.h, position: { top: st === 'pressed' ? Math.round(4 * u) : -Math.round(u) }, flexDirection: 'row', alignItems: 'center', padding: { left: Math.round(64 * u) }, pointerFilter: 'none' }}
+      >
+        {item.icon ? (
+          // in the icon slot the baked items use, left of the label
+          <UiEntity
+            uiTransform={{ positionType: 'absolute', position: { left: Math.round(22 * u) }, width: Math.round(30 * u), height: Math.round(30 * u), pointerFilter: 'none' }}
+            uiBackground={{ texture: { src: item.icon }, textureMode: 'stretch' }}
+          />
+        ) : null}
         <OutlineLabel value={item.label} fontSize={Math.round(props.h * 0.42)} align="middle-left" width="100%" height={props.h} />
       </UiEntity>
     </UiEntity>
@@ -230,6 +243,9 @@ const SideButtons = () => {
   if (!session.inLobby && !session.unlocked) items.push({ id: 'hint', file: 'menu_labeled/menu_hint', label: 'Hint', onClick: act(showHint) })
   if (!session.inLobby) items.push({ id: 'restart', file: 'menu_labeled/menu_restart', label: 'Restart', onClick: act(restartLevel) })
   if (!session.inLobby) items.push({ id: 'code', file: 'menu_labeled/menu_level_code', label: 'Level code', onClick: act(toggleCode) })
+  // the sound controls live in the menu (a round button beside Options overlapped the top bar on phones)
+  const soundImg = sfx.muted ? 'buttons/button_sounds_off.png' : 'buttons/button_sounds_on.png'
+  items.push({ id: 'sound', image: { file: soundImg, all: ['buttons/button_sounds_on.png', 'buttons/button_sounds_off.png'] }, label: 'Sounds', onClick: act(() => (soundPanel.open = !soundPanel.open)) })
   const pad = S(12)
   const panelW = itemW + pad * 2
   const panelH = pad * 2 + items.length * itemH + (items.length - 1) * gap + S(4)
@@ -237,7 +253,8 @@ const SideButtons = () => {
     <UiEntity
       uiTransform={{
         positionType: 'absolute',
-        position: { top: S(10), right: S(12) },
+        // Options is centred on the top bar's row (the bar is S(60) tall at S(10) from the top)
+        position: { top: S(10) + Math.round((S(60) - h) / 2), right: S(12) },
         flexDirection: 'column',
         alignItems: 'flex-end',
         pointerFilter: 'none'
@@ -247,7 +264,6 @@ const SideButtons = () => {
         <PillButton id="back-to-editor" label="Back to editor" width={S(190)} height={h} accent onClick={act(openEditor)} margin={m} />
       ) : null}
       <UiEntity uiTransform={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', pointerFilter: 'none' }}>
-        <SoundButton size={h} margin={{ right: S(10), bottom: S(8) }} />
         <PillButton
           id="options"
           label="Options"
@@ -350,10 +366,11 @@ const CodePanel = () => {
 
 const CompletePanel = () => {
   const width = S(640)
-  const height = S(300)
+  const height = S(300) + (session.levelIndex >= 0 && session.runScore > 0 ? S(48) : 0)
   const custom = session.levelIndex < 0
   const best = custom ? null : progress[session.levelIndex]
   const newBest = !best || session.moves === best.bestMoves
+  const scored = !custom && session.runScore > 0
   return (
     <UiEntity
       uiTransform={{
@@ -381,8 +398,18 @@ const CompletePanel = () => {
           font="sans-serif"
           color={PAL.text}
           textAlign="middle-center"
-          uiTransform={{ width: '100%', height: S(34), margin: { bottom: S(18) } }}
+          uiTransform={{ width: '100%', height: S(34), margin: { bottom: scored ? S(4) : S(18) } }}
         />
+        {scored ? (
+          <OutlineLabel
+            value={`+${fmtPts(session.runScore)} pts${session.runNewBest ? '   New best!' : ''}`}
+            fontSize={FS(24)}
+            color={PAL.amber}
+            width="100%"
+            height={S(36)}
+          />
+        ) : null}
+        {scored ? <UiEntity uiTransform={{ height: S(12), pointerFilter: 'none' }} /> : null}
         <UiEntity uiTransform={{ flexDirection: 'row', height: S(50), pointerFilter: 'none' }}>
           {custom ? (
             <PillButton id="back-edit" label="Back to editor" width={S(200)} height={S(46)} accent onClick={openEditor} margin={{ right: S(12) }} />
@@ -466,7 +493,12 @@ const LevelTile = (props: { index: number; key?: string }) => {
   const sub = current ? (
     <Img file="level_tiles/tag_play.png" h={Math.round(size * 0.24)} />
   ) : pr.done ? (
-    <Img file="icons/icon_check.png" h={Math.round(size * 0.26)} />
+    // stars for the best score (an older record with no score yet still shows as done, with one star)
+    <Img
+      file={`level_tiles/stars_${Math.max(1, starsFor(i, pr.bestScore))}.png`}
+      h={Math.round(size * 0.2)}
+      margin={{ top: Math.round(size * 0.02) }}
+    />
   ) : (
     <Img file="level_tiles/tag_new.png" h={Math.round(size * 0.24)} />
   )
@@ -493,6 +525,10 @@ const LevelTile = (props: { index: number; key?: string }) => {
     </FramedSprite>
   )
 }
+
+// ---- Points ----
+/** 12345 -> "12,345" (toLocaleString is not reliable in the scene runtime). */
+const fmtPts = (n: number) => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 
 // Dragging a list on a touch screen starts on top of a tile, which swallows the gesture, so the menu is paged with
 // Prev / Next buttons instead of scrolling.
@@ -566,33 +602,73 @@ const HintBanner = () => (
   </UiEntity>
 )
 
-const ToastBanner = () => {
-  const w = S(560)
-  const h = S(52)
+// ---- Notices ----
+// Status messages (exit unlocked, level result) are drawn as a flat, see-through strip with a thin rim and no bevel or
+// drop shadow, so they read as a notification and not as a button: playtesters kept tapping the old green pill.
+const NOTICE_IN_MS = 220
+const noticeSeen: Record<string, { first: number; last: number }> = {}
+/** 0 -> 1 over NOTICE_IN_MS from the frame a notice first shows (restarts if it was gone for a moment). */
+const noticeIn = (id: string) => {
+  const now = Date.now()
+  const seen = noticeSeen[id]
+  if (!seen || now - seen.last > 250) noticeSeen[id] = { first: now, last: now }
+  else seen.last = now
+  return Math.min(1, (now - noticeSeen[id].first) / NOTICE_IN_MS)
+}
+const NOTICE_BG = Color4.create(INK.r, INK.g, INK.b, 0.78)
+
+const Notice = (props: { id: string; text: string; icon?: string; rim: Color4; width: number }) => {
+  const h = S(46)
+  const k = noticeIn(props.id)
+  const ease = 1 - (1 - k) * (1 - k)
   return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(84), left: 0 }, width: '100%', height: S(60), justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
-      <UiEntity uiTransform={{ width: w, height: h, justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
-        <NineBg file="toast/toast_bg.png" geo={TOAST} l={34} r={34} t={34} b={40} u={h / 74} />
-        <UiEntity uiTransform={{ width: '100%', height: h, position: { top: -Math.round(h * 0.04) }, pointerFilter: 'none' }}>
-          <OutlineLabel value={session.toastText} fontSize={FS(20)} color={PAL.text} width="100%" height={h} />
-        </UiEntity>
+    <UiEntity
+      uiTransform={{
+        positionType: 'absolute',
+        position: { top: S(84) - Math.round((1 - ease) * S(24)), left: 0 },
+        width: '100%',
+        height: h,
+        justifyContent: 'center',
+        alignItems: 'center',
+        opacity: ease,
+        pointerFilter: 'none'
+      }}
+    >
+      <UiEntity
+        uiTransform={{
+          width: props.width,
+          height: h,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: { left: S(16), right: S(16) },
+          borderRadius: S(10),
+          borderWidth: Math.max(2, S(2)),
+          borderColor: props.rim,
+          pointerFilter: 'none'
+        }}
+        uiBackground={{ color: NOTICE_BG }}
+      >
+        {props.icon ? <Img file={props.icon} h={Math.round(h * 0.56)} margin={{ right: S(10) }} /> : null}
+        <Label
+          value={props.text}
+          fontSize={FS(18)}
+          font="sans-serif"
+          color={PAL.text}
+          textAlign="middle-center"
+          uiTransform={{ height: h, pointerFilter: 'none' }}
+        />
       </UiEntity>
     </UiEntity>
   )
 }
 
-/** Shown between covering the last plate and walking through the exit door (baked sprite, text optically centred). */
-const ExitBanner = () => {
-  const file = 'toast/toast_exit_unlocked.png'
-  const face = faceOf(file, TOAST)
-  const w = S(440)
-  const h = Math.round((w * face.h) / face.w)
-  return (
-    <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(84), left: 0 }, width: '100%', height: h + S(8), justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
-      <FramedSprite file={file} geo={TOAST} w={w} h={h} />
-    </UiEntity>
-  )
-}
+const ToastBanner = () => <Notice id="toast" text={session.toastText} rim={PAL.good} width={S(560)} />
+
+/** Shown between covering the last plate and walking through the exit door. */
+const ExitBanner = () => (
+  <Notice id="exit" text="Exit unlocked! Head for the door" icon="icons/icon_door.png" rim={PAL.good} width={S(400)} />
+)
 
 export const Hud = () => {
   const showComplete = session.solved && Date.now() - session.finishedAt > COMPLETE_DELAY_MS

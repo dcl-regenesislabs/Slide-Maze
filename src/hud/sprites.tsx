@@ -189,7 +189,8 @@ export const Img = (props: { key?: string; file: string; h: number; w?: number; 
 
 const DIGIT_FILE: Record<string, string> = { ':': 'colon', '.': 'dot', '/': 'slash' }
 /** Number / time drawn with the game's digit sprites. `h` is the sprite height; glyphs are tucked together. */
-export const Digits = (props: { text: string; h: number; margin?: { top?: number; bottom?: number } }) => {
+/** `gap` is the extra room a space adds, as a share of the digit height (0.3 by default; small for thousands). */
+export const Digits = (props: { text: string; h: number; gap?: number; margin?: { top?: number; bottom?: number } }) => {
   const tuck = Math.round(props.h * 0.085)
   const chars = props.text.split('').filter((c) => c === ' ' || /[0-9:./]/.test(c))
   return (
@@ -200,7 +201,7 @@ export const Digits = (props: { text: string; h: number; margin?: { top?: number
             key={`d${i}`}
             file={`digits/digit_${DIGIT_FILE[c] ?? c}.png`}
             h={props.h}
-            margin={{ left: (i === 0 ? 0 : -tuck) + (chars[i - 1] === ' ' ? Math.round(props.h * 0.3) : 0) }}
+            margin={{ left: (i === 0 ? 0 : -tuck) + (chars[i - 1] === ' ' ? Math.round(props.h * (props.gap ?? 0.3)) : 0) }}
           />
         )
       )}

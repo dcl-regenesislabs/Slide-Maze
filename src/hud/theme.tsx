@@ -131,11 +131,10 @@ function outlineRing(o: number) {
       }
     }
   }
-  pts.push({ left: 0, top: o + 1 }) // a thin drop shadow just under the outline
   return (ringCache[o] = pts)
 }
 
-/** Ink outline all around plus a solid drop shadow, like the sprite lettering. */
+/** Ink outline all around, like the sprite lettering (no drop shadow). */
 export const OutlineLabel = (props: {
   value: string
   fontSize: number
