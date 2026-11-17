@@ -95,7 +95,6 @@ export function buildWallRing(r: Rect, seed: number, thinSouth = false, sc = 1):
 
 // ---- Ceiling and crystals for a ring ----
 const ROCK_DARK = Color4.create(0.07, 0.1, 0.16, 1)
-const ROCK_LIGHT = Color4.create(0.19, 0.25, 0.34, 1)
 const CYAN = Color4.create(0.3, 0.9, 1, 1)
 const PINK = Color4.create(1, 0.45, 0.8, 1)
 const CEILING_Y = 46 // metres: the underside of a full-size ring's ceiling, below the shortest wall (about 49 m)
@@ -113,31 +112,13 @@ function solid(out: Entity[], pos: Vector3, size: Vector3, color: Color4, opts: 
   out.push(e)
 }
 
-/** A rock ceiling over the ring, with stalactites hanging from it. It sits just under the wall tops, so the ring is closed. */
-export function buildCeiling(r: Rect, seed: number, sc = 1): Entity[] {
+/** A rock ceiling over the ring. It sits just under the wall tops, so the ring is closed. */
+export function buildCeiling(r: Rect, sc = 1): Entity[] {
   const out: Entity[] = []
-  let s = (seed * 2246822519 + 777) >>> 0
-  const rnd = () => {
-    s = (Math.imul(s, 1664525) + 1013904223) >>> 0
-    return s / 4294967296
-  }
-  const y = CEILING_Y * sc
   const cx = (r.x0 + r.x1) / 2
   const cz = (r.z0 + r.z1) / 2
   // slightly bigger than the ring, so no gap shows over the walls
-  solid(out, Vector3.create(cx, y + 2, cz), Vector3.create(r.x1 - r.x0 + 2, 4, r.z1 - r.z0 + 2), ROCK_DARK)
-  const inset = WALL_DEPTH * sc
-  const area = (r.x1 - r.x0 - 2 * inset) * (r.z1 - r.z0 - 2 * inset)
-  const n = Math.max(6, Math.min(40, Math.round(area / 150)))
-  for (let i = 0; i < n; i++) {
-    const w = (1.5 + rnd() * 3) * sc
-    const h = (6 + rnd() * 14) * sc
-    const x = r.x0 + inset + rnd() * (r.x1 - r.x0 - 2 * inset)
-    const z = r.z0 + inset + rnd() * (r.z1 - r.z0 - 2 * inset)
-    solid(out, Vector3.create(x, y - h / 2, z), Vector3.create(w, h, w), ROCK_LIGHT, {
-      rot: Quaternion.fromEulerDegrees((rnd() - 0.5) * 6, rnd() * 90, (rnd() - 0.5) * 6)
-    })
-  }
+  solid(out, Vector3.create(cx, CEILING_Y * sc + 2, cz), Vector3.create(r.x1 - r.x0 + 2, 4, r.z1 - r.z0 + 2), ROCK_DARK)
   return out
 }
 

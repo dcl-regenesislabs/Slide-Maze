@@ -108,6 +108,7 @@ interface Runtime {
   fans: { x: number; z: number; fx: number; fz: number; len: number }[] // wind lanes, for the wind streaks
   spawn: Vector3 | null // where the player arrives (the entrance annex), or null = the start tile
   door: DoorState | null // the exit door
+  entrance: { entity: Entity; y: number; t: number } | null // the entrance model, sunk away once the exit opens (t: seconds sinking)
   openings: { side: Dir; at: number }[] // gaps left in the perimeter walls for the annexes (x or z of the gap's centre)
   fills: { entity: Entity; t: number; toY: number }[] // floor tiles rising into filled pits
   slide: Slide | null
@@ -459,6 +460,7 @@ function buildLevel(level: Level, index: number) {
     fans: [],
     spawn: null,
     door: null,
+    entrance: null,
     openings: [],
     fills: [],
     slide: null,
@@ -538,7 +540,7 @@ function buildLevel(level: Level, index: number) {
   // the cave around the game, sized to this level (the clear space inside is the level plus a gap, so corners never touch the slab):
   // walls, its own ceiling, and glowing crystals on the walls
   const ring = ringAround({ x: ORIGIN.x, z: ORIGIN.z }, (level.width * TILE) / 2, (level.height * TILE) / 2, WALL_GAP)
-  r.entities.push(...buildWallRing(ring, index + 7), ...buildCeiling(ring, index + 7), ...buildCrystals(ring, index + 7))
+  r.entities.push(...buildWallRing(ring, index + 7), ...buildCeiling(ring), ...buildCrystals(ring, index + 7))
   if (editor.open) {
     buildGrid(r)
     buildPicks(r)
@@ -1009,6 +1011,7 @@ function buildEntrance(r: Runtime) {
   for (const o of options) {
     if (l.tiles[o.y][o.x] !== '#' || !reach.has(o.y * l.width + o.x)) continue // a step you can actually walk onto
     const annex = buildAnnex(r, { x: o.x, y: o.y }, outwardSide(l, o), false)
+    r.entrance = { entity: annex.entity, y: Transform.get(annex.entity).position.y, t: 0 }
     r.spawn = Vector3.create(annex.cx, ANNEX_TOP + ENTRANCE_STEP + 0.1, annex.cz) // on top of the model's step, not beside it
     return
   }
@@ -1397,7 +1400,32 @@ function fmtTime(ms: number): string {
 }
 
 /** Runs the exit door's unlock: runes light up, a short pause, the doors open; then the trigger tile past it (see buildAnnex) finishes the level. */
+const ENTRANCE_SINK_TIME = 1.2 // seconds for the entrance to sink out of sight
+const ENTRANCE_SINK_DEPTH = 7 // metres: the model is about 5.5 m tall
+
+/**
+ * Once every plate is covered, the entrance sinks into the floor and is gone, so the open exit is the only door left (two
+ * doors at the end of a level read as two ways out, which confused players on phones).
+ */
+function sinkEntrance(dt: number) {
+  const e = rt?.entrance
+  if (!rt || !e || !session.unlocked) return
+  if (e.t === 0) {
+    const p = Transform.get(e.entity).position
+    dust(p.x, ANNEX_TOP + 0.2, p.z, 14, FX_COLORS.snow)
+  }
+  e.t += dt
+  const k = Math.min(1, e.t / ENTRANCE_SINK_TIME)
+  const t = Transform.getMutable(e.entity)
+  t.position = Vector3.create(t.position.x, e.y - ENTRANCE_SINK_DEPTH * k * k, t.position.z) // eases in: slow start, then drops
+  if (k >= 1) {
+    engine.removeEntity(e.entity) // its collider goes with it; the annex's invisible walls stay
+    rt.entrance = null
+  }
+}
+
 function doorSystem(dt: number) {
+  sinkEntrance(dt)
   const d = rt?.door
   if (!rt || !d) return
   if (d.target) {
