@@ -11,6 +11,8 @@ import { Color4 } from '@dcl/sdk/math'
 import { Card, FS, INK, OutlineLabel, PAL, PillButton, S, btnState, hover, isHovered, popFactor, popPress, press } from './theme'
 import { BTN, Digits, FramedSprite, Img, NineBg, REV, Sparkles, TILE, sizeOf } from './sprites'
 import { UiTextureWarmer } from './textureWarmer'
+import { WelcomePanel, openWelcome, welcome } from './welcome'
+import { PushPrompt } from './pushPrompt'
 import { toggleTopDown, topDownView } from '../game/topDown'
 
 const hexBad = Color4.create(1, 0.54, 0.48, 1)
@@ -247,6 +249,7 @@ const SideButtons = () => {
   if (!session.inLobby) items.push({ id: 'topdown', file: topDownView.on ? 'menu_labeled/menu_3d_view' : 'menu_labeled/menu_top_down_view', label: topDownView.on ? '3D view' : 'Top-down view', onClick: act(toggleTopDown) })
   // the sound controls live in the menu (a round button beside Options overlapped the top bar on phones)
   items.push({ id: 'sound', file: sfx.muted ? 'menu_labeled/menu_sounds_off' : 'menu_labeled/menu_sounds_on', label: 'Sounds', onClick: act(() => (soundPanel.open = !soundPanel.open)) })
+  items.push({ id: 'help', file: 'menu_labeled/menu_how_to_play', label: 'How to play', onClick: act(openWelcome) })
   const pad = S(12)
   const panelW = itemW + pad * 2
   const panelH = pad * 2 + items.length * itemH + (items.length - 1) * gap + S(4)
@@ -671,23 +674,37 @@ const ExitBanner = () => (
   <Notice id="exit" text="Exit unlocked! Head for the door" icon="icons/icon_door.png" rim={PAL.good} width={S(400)} />
 )
 
+/** Whether the Level Complete panel is on screen (after its short delay, and not under another full panel). */
+export const completeShowing = () =>
+  session.solved &&
+  Date.now() - session.completedAt > COMPLETE_DELAY_MS &&
+  !session.advancing &&
+  !editor.open &&
+  !session.codeOpen &&
+  !session.menuOpen
+
 export const Hud = () => {
-  const showComplete = session.solved && Date.now() - session.completedAt > COMPLETE_DELAY_MS
+  // the Level Complete panel stands alone, like the other full panels: no top bar, banners or Options under it (the HUD
+  // system in index.ts closes Options and the sound panel when it shows; nothing here writes state)
+  const completeOpen = completeShowing()
   return (
     <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
       <UiTextureWarmer />
       {/* The level select covers the play HUD: the top bar and its banners hide while it is open. */}
-      {!session.inLobby && !session.menuOpen && <TopBar />}
+      {!session.inLobby && !session.menuOpen && !completeOpen && <TopBar />}
       {session.unlocked && session.hasDoor && !session.solved && !editor.open && !session.menuOpen && !topDownView.on && <ExitBanner />}
-      {Date.now() < session.toastUntil && !editor.open && !session.menuOpen && <ToastBanner />}
-      {!editor.open && <SideButtons />}
+      {Date.now() < session.toastUntil && !editor.open && !session.menuOpen && !completeOpen && <ToastBanner />}
+      {/* Options stays hidden until the welcome panel is closed, so the two never show at once */}
+      {!editor.open && !welcome.open && !completeOpen && <SideButtons />}
       {session.codeOpen && <CodePanel />}
       {soundPanel.open && <SoundPanel />}
       {session.menuOpen && <LevelMenu />}
-      {Date.now() < session.hintUntil && !session.inLobby && !session.menuOpen && <HintBanner />}
+      {Date.now() < session.hintUntil && !session.inLobby && !session.menuOpen && !completeOpen && <HintBanner />}
       {editor.open && <EditorUI />}
       {myLevels.panelOpen && <MyLevelsPanel />}
-      {showComplete && !session.advancing && !editor.open && !session.codeOpen && !session.menuOpen && <CompletePanel />}
+      {completeOpen && <CompletePanel />}
+      {!completeOpen && !session.menuOpen && !session.codeOpen && !soundPanel.open && <PushPrompt />}
+      {welcome.open && !session.menuOpen && !soundPanel.open && <WelcomePanel />}
     </UiEntity>
   )
 }

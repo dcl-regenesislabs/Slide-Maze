@@ -48,15 +48,18 @@ export const TopDownOverlay = () => {
   if (!topDownView.on || session.inLobby || session.solved || session.menuOpen) return null
   const view = playView()
   if (!view) return null
-  const { tile, blockSize } = levelGeometry()
-  const tileH = tileScreenHeight()
+  const { tile, blockSize, floorTop } = levelGeometry()
+  // Rings and arrows sit on the cubes' TOP faces, which is what the camera sees. Projecting the cube centre (half a cube
+  // lower) put them off-centre towards the middle of the screen, more the nearer the cube is to an edge (perspective).
+  const topY = floorTop + blockSize
+  const tileH = tileScreenHeight(topY)
   const selected = topDownUi.selected
   const dirs = selected >= 0 ? legalDirs(selected) : []
   const sel = selected >= 0 ? view.blocks[selected] : null
   return (
     <UiEntity uiTransform={{ positionType: 'absolute', position: { top: 0, left: 0 }, width: '100%', height: '100%', pointerFilter: 'none' }}>
       {view.blocks.map((b, i) => {
-        const at = toScreen(b)
+        const at = toScreen({ x: b.x, y: topY, z: b.z })
         if (!at) return null
         const id = `td-block-${i}`
         const mine = i === selected
@@ -75,7 +78,7 @@ export const TopDownOverlay = () => {
         ? dirs.map((d) => {
             const delta = DIR_DELTA[d]
             // the arrow sits on the next tile that way (grid rows grow south, world z grows north)
-            const at = toScreen({ x: sel.x + delta.x * tile, y: sel.y, z: sel.z - delta.y * tile })
+            const at = toScreen({ x: sel.x + delta.x * tile, y: topY, z: sel.z - delta.y * tile })
             if (!at) return null
             const id = `td-arrow-${d}`
             const k = isPressed(id) ? 0.88 : isHovered(id) ? 1.08 : 1
