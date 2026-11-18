@@ -139,7 +139,11 @@ let charge: { index: number; dir: Dir; t: number } | null = null
  * The block the avatar is standing against and could push right now with E (block -1 = none), for the HUD prompt and the
  * phone's action button. Never set in the top-down view, which has its own controls.
  */
-export const pushPrompt: { block: number; dir: Dir } = { block: -1, dir: 'N' }
+/**
+ * The block the avatar can push with E (-1 = none) and which way. Latched through a push (windup, slide, cooldown) with
+ * `busy` set, so the phone's push button stays put instead of blinking off and on with every push.
+ */
+export const pushPrompt: { block: number; dir: Dir; busy: boolean } = { block: -1, dir: 'N', busy: false }
 
 // ---- Shoulder-push emote ----
 const PUSH_EMOTE = 'assets/Animations/ShoulderPushFast_emote.glb' // original retimed 1.6x; exact on-disk path, case included
@@ -1446,21 +1450,38 @@ function pushSystem(dt: number) {
   const p = Transform.get(engine.PlayerEntity).position
 
   pushEffort.lastEvent = ''
-  pushPrompt.block = -1
-  if (!rt) return
+  const noPrompt = () => {
+    pushPrompt.block = -1
+    pushPrompt.busy = false
+  }
+  if (!rt) return noPrompt()
   if (rt.cooldown > 0) rt.cooldown -= dt // also in the top-down view: its pushes wait for the same cooldown
-  if (topDownView.on) return // pushes come from the top-down controls, the hidden avatar does nothing
-  if (editor.open) return // E belongs to the editor's tool switch there
-  if (rt.slide || rt.cooldown > 0 || session.solved || session.unlocked || rt.resetIn > 0) {
+  if (topDownView.on) return noPrompt() // pushes come from the top-down controls, the hidden avatar does nothing
+  if (editor.open) return noPrompt() // E belongs to the editor's tool switch there
+  if (session.solved || session.unlocked || rt.resetIn > 0) {
     if (charge) endCharge('cancel')
+    return noPrompt()
+  }
+  // A panel covers the game (Options, level select, My levels...): E does nothing under it, same as the prompt.
+  if (session.uiOpen) {
+    if (charge) endCharge('cancel')
+    return noPrompt()
+  }
+  // Mid push (sliding or cooling down): keep the prompt on the pushed block so the phone button does not blink.
+  if (rt.slide || rt.cooldown > 0) {
+    if (charge) endCharge('cancel')
+    pushPrompt.busy = pushPrompt.block >= 0
     return
   }
   // Already leaning on a block: keep going while the avatar stays against the same face, else cancel.
   if (charge) {
     if (contactDir(charge.index, p) !== charge.dir) {
       endCharge('cancel')
-      return
+      return noPrompt()
     }
+    pushPrompt.block = charge.index
+    pushPrompt.dir = charge.dir
+    pushPrompt.busy = true
     if (pushEmotePlaying || !pushEmoteFrozen) charge.t += dt
     pushEffort.progress = Math.min(1, charge.t / PUSH_WINDUP)
     dustT += dt
@@ -1493,9 +1514,10 @@ function pushSystem(dt: number) {
       nearD = d
     }
   }
-  if (near < 0) return
+  if (near < 0) return noPrompt()
   pushPrompt.block = near
   pushPrompt.dir = nearDir
+  pushPrompt.busy = false
   if (!inputSystem.isTriggered(InputAction.IA_PRIMARY, PointerEventType.PET_DOWN)) return
   charge = { index: near, dir: nearDir, t: 0 }
   startPushEmote(near, nearDir)

@@ -17,6 +17,7 @@ export interface Session {
   solved: boolean // the level is finished (a level with a door finishes when the player walks through it)
   codeOpen: boolean
   menuOpen: boolean // the level-select menu
+  uiOpen: boolean // any panel covers the game (Options, level select, code, My levels, sound, How to play, Level Complete); set by hud/index.ts
   copiedAt: number // Date.now() of the last successful copy, for the "Copied!" flash
   advancing: boolean // the level is finished and the next one is about to load
   toastText: string // a short message shown across levels (e.g. the result of the level you just finished)
@@ -41,6 +42,7 @@ export const session: Session = {
   solved: false,
   codeOpen: false,
   menuOpen: false,
+  uiOpen: false,
   copiedAt: 0,
   advancing: false,
   toastText: '',

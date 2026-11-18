@@ -19,6 +19,7 @@ interface SavedLevel {
 
 const KEY = 'levels'
 const PROGRESS_KEY = 'progress'
+const TUTORIAL_KEY = 'tutorialSeen' // '1' once the player has closed How to play
 
 type Progress = Record<string, { m: number; t: number; s?: number }> // s: best points (absent in records saved before scoring)
 
@@ -148,6 +149,7 @@ export function initServer() {
     const address = context.from
     const progress = withScores(await loadProgress(address))
     room.send('progressData', { json: JSON.stringify(progress) }, { to: [address] })
+    room.send('tutorialState', { seen: !!(await Storage.player.get<string>(address, TUTORIAL_KEY)) }, { to: [address] })
     const total = totalScore(progress)
     sendBoard(address, total > 0 ? await updateBoard(address, data.name, total) : await loadBoard())
   })
@@ -185,6 +187,11 @@ export function initServer() {
     }
     room.send('progressData', { json: JSON.stringify(progress) }, { to: [address] })
     sendBoard(address, await updateBoard(address, data.name, totalScore(progress)))
+  })
+
+  room.onMessage('tutorialSeen', async (_data, context) => {
+    if (!context) return
+    if (!(await Storage.player.set(context.from, TUTORIAL_KEY, '1'))) console.log(`[SERVER] could not save the tutorial flag for ${context.from}`)
   })
 
   room.onMessage('requestLevels', async (_data, context) => {

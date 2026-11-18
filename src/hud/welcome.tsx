@@ -3,13 +3,21 @@ import { Color4 } from '@dcl/sdk/math'
 import { Card, FS, OutlineLabel, PAL, PillButton, S } from './theme'
 import { Digits, Img, REV, Sparkles } from './sprites'
 import { mobile } from './platform'
+import { markTutorialSeen } from '../game/levelStore'
 
-// "How to play": shown when the player arrives at the scene. Explains the goal next to a small looping animation of a
-// block sliding across the ice onto its plate, with a one-move counter. Closed with the Close button (or by starting a
-// level, see Hud).
+// "How to play": opens on a player's first arrival at the scene (the server remembers once it has been closed, see
+// levelStore.ts) and from the Options menu. Explains the goal next to a small looping animation of a block sliding across
+// the ice onto its plate, with a one-move counter. When it opens is decided in hud/index.ts.
 
-export const welcome = { open: true, openedAt: Date.now() }
-export const closeWelcome = () => (welcome.open = false)
+export const welcome = { open: false, openedAt: 0 }
+export function openWelcome() {
+  welcome.open = true
+  welcome.openedAt = Date.now()
+}
+export function closeWelcome() {
+  welcome.open = false
+  markTutorialSeen()
+}
 
 // tutorial/board.png geometry, in its own pixels: 7 x 5 cells (5 x 3 of ice inside a ring of stone)
 const BOARD_W = 528

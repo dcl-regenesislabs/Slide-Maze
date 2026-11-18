@@ -65,6 +65,20 @@ let syncedAt = 0
 // NAME_WAIT_MS it goes anyway (the board shows the short address, and the next refresh, which carries the name, fixes it).
 const NAME_WAIT_MS = 10_000
 
+/**
+ * Whether this player has already seen How to play (stored on the server with their progress). `known` turns true when
+ * the server answers; until then the HUD waits (with a fallback, see hud/index.ts).
+ */
+export const tutorial = { known: false, seen: false }
+let tutorialToSave = false
+
+/** The player closed How to play: remember it on the server so it does not open on arrival next time. */
+export function markTutorialSeen() {
+  if (tutorial.seen) return
+  tutorial.seen = true
+  tutorialToSave = true
+}
+
 export function reportCompletion(level: number, moves: number, timeMs: number) {
   pendingReports.push({ level, moves, timeMs })
 }
@@ -80,6 +94,10 @@ function progressSystem() {
   while (pendingReports.length) {
     const r = pendingReports.shift()!
     room.send('reportComplete', { ...r, name: myName() })
+  }
+  if (tutorialToSave) {
+    tutorialToSave = false
+    room.send('tutorialSeen', { v: 1 })
   }
 }
 
@@ -137,6 +155,10 @@ export function setupLevelStore() {
   })
   room.onMessage('progressData', (data) => applyProgress(data.json))
   room.onMessage('leaderboardData', (data) => applyLeaderboard(data.json))
+  room.onMessage('tutorialState', (data) => {
+    tutorial.known = true
+    tutorial.seen = tutorial.seen || data.seen
+  })
   setCompleteHandler(reportCompletion)
   engine.addSystem(progressSystem, 3, 'sm-progress')
   room.onMessage('levelData', (data) => {

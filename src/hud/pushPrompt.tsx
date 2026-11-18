@@ -2,19 +2,20 @@ import ReactEcs, { UiEntity } from '@dcl/sdk/react-ecs'
 import { FS, OutlineLabel, PAL, S } from './theme'
 import { Img } from './sprites'
 import { mobile } from './platform'
-import { pushEffort, pushPrompt } from '../game/world'
+import { pushPrompt } from '../game/world'
 
 // Shown at the bottom of the screen while the avatar stands against a block it can push.
 // Desktop: one baked "[E] to push" pill (hud/prompt_e_push.png).
 // Phone: "Tap to push" next to the block icon (the icon of the action button that appears then, see hud/index.ts),
 // only until the first push: after that the button alone is enough.
 
-let phoneHintDone = false
+/** The phone's "Tap to push" hint is retired after the first push (set by the HUD system in hud/index.ts). */
+export const phoneHint = { done: false }
 
 export const PushPrompt = () => {
-  if (pushEffort.active) phoneHintDone = true
-  if (pushPrompt.block < 0) return null
-  if (mobile() && phoneHintDone) return null
+  // hidden while a push is winding up, sliding or cooling down (the button stays, see hud/index.ts)
+  if (pushPrompt.block < 0 || pushPrompt.busy) return null
+  if (mobile() && phoneHint.done) return null
   const h = S(56)
   return (
     <UiEntity

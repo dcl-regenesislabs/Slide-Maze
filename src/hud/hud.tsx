@@ -11,7 +11,7 @@ import { Color4 } from '@dcl/sdk/math'
 import { Card, FS, INK, OutlineLabel, PAL, PillButton, S, btnState, hover, isHovered, popFactor, popPress, press } from './theme'
 import { BTN, Digits, FramedSprite, Img, NineBg, REV, Sparkles, TILE, sizeOf } from './sprites'
 import { UiTextureWarmer } from './textureWarmer'
-import { WelcomePanel, welcome } from './welcome'
+import { WelcomePanel, openWelcome, welcome } from './welcome'
 import { PushPrompt } from './pushPrompt'
 import { toggleTopDown, topDownView } from '../game/topDown'
 
@@ -249,6 +249,7 @@ const SideButtons = () => {
   if (!session.inLobby) items.push({ id: 'topdown', file: topDownView.on ? 'menu_labeled/menu_3d_view' : 'menu_labeled/menu_top_down_view', label: topDownView.on ? '3D view' : 'Top-down view', onClick: act(toggleTopDown) })
   // the sound controls live in the menu (a round button beside Options overlapped the top bar on phones)
   items.push({ id: 'sound', file: sfx.muted ? 'menu_labeled/menu_sounds_off' : 'menu_labeled/menu_sounds_on', label: 'Sounds', onClick: act(() => (soundPanel.open = !soundPanel.open)) })
+  items.push({ id: 'help', file: 'menu_labeled/menu_how_to_play', label: 'How to play', onClick: act(openWelcome) })
   const pad = S(12)
   const panelW = itemW + pad * 2
   const panelH = pad * 2 + items.length * itemH + (items.length - 1) * gap + S(4)
@@ -673,16 +674,19 @@ const ExitBanner = () => (
   <Notice id="exit" text="Exit unlocked! Head for the door" icon="icons/icon_door.png" rim={PAL.good} width={S(400)} />
 )
 
+/** Whether the Level Complete panel is on screen (after its short delay, and not under another full panel). */
+export const completeShowing = () =>
+  session.solved &&
+  Date.now() - session.completedAt > COMPLETE_DELAY_MS &&
+  !session.advancing &&
+  !editor.open &&
+  !session.codeOpen &&
+  !session.menuOpen
+
 export const Hud = () => {
-  const showComplete = session.solved && Date.now() - session.completedAt > COMPLETE_DELAY_MS
-  // the welcome is for arriving at the scene: once a level (or the editor) opens it is done
-  if (welcome.open && (!session.inLobby || editor.open)) welcome.open = false
-  // the Level Complete panel stands alone, like the other full panels: no top bar, banners or Options under it
-  const completeOpen = showComplete && !session.advancing && !editor.open && !session.codeOpen && !session.menuOpen
-  if (completeOpen) {
-    options.open = false
-    soundPanel.open = false
-  }
+  // the Level Complete panel stands alone, like the other full panels: no top bar, banners or Options under it (the HUD
+  // system in index.ts closes Options and the sound panel when it shows; nothing here writes state)
+  const completeOpen = completeShowing()
   return (
     <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
       <UiTextureWarmer />

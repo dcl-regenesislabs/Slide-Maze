@@ -1,12 +1,14 @@
 import { TOP_DOWN_OVERLAY_Z, setupTopDownOverlay } from './topDownOverlay'
 import { CameraModeArea, CameraType, engine, InputAction, SkyboxTime, Transform, TouchScreenControls } from '@dcl/sdk/ecs'
 import { ReactEcsRenderer } from '@dcl/sdk/react-ecs'
-import { Hud, options } from './hud'
+import { Hud, completeShowing, options } from './hud'
 import { topDownView } from '../game/topDown'
-import { pushPrompt } from '../game/world'
+import { pushEffort, pushPrompt } from '../game/world'
 import { editor, session } from '../game/session'
 import { soundPanel } from '../game/sfx'
-import { myLevels } from '../game/levelStore'
+import { markTutorialSeen, myLevels, tutorial } from '../game/levelStore'
+import { openWelcome, welcome } from './welcome'
+import { phoneHint } from './pushPrompt'
 import { Vector3 } from '@dcl/sdk/math'
 import { mobile, resolvePlatform } from './platform'
 
@@ -35,13 +37,42 @@ export function setupHud() {
   let pushShown: boolean | null = null
   const eraserIcon = { tex: { $case: 'texture' as const, texture: { src: 'assets/images/icon-eraser.png' } } }
   const pushIcon = { tex: { $case: 'texture' as const, texture: { src: 'assets/images/revamp/tutorial/block_button.png' } } } // tight square crop, so the cube fills the button
+  // How to play opens on a player's first arrival (the server says whether they have seen it; if it has not answered in
+  // WELCOME_FALLBACK_MS, show it anyway). It is also in the Options menu.
+  const WELCOME_FALLBACK_MS = 10000
+  const startedAt = Date.now()
+  let welcomeDecided = false
+  let wasInLobby = session.inLobby
   engine.addSystem(() => {
+    // --- UI state the HUD render reads (kept out of the render itself) ---
+    if (!welcomeDecided && (tutorial.known || Date.now() - startedAt > WELCOME_FALLBACK_MS)) {
+      welcomeDecided = true
+      if (!tutorial.seen && session.inLobby && !editor.open) openWelcome()
+    }
+    // the panel belongs to the lobby: starting a level (or opening the editor) puts it away, and counts as seen
+    if (welcome.open && ((wasInLobby && !session.inLobby) || editor.open)) {
+      welcome.open = false
+      markTutorialSeen()
+    }
+    wasInLobby = session.inLobby
     // The Options menu lives in SideButtons, which unmounts in the editor; drop a stale open flag there so it cannot
     // keep Jump hidden after the editor is opened from the lobby terminal.
     if (editor.open) options.open = false
+    // Level Complete stands alone: Options and the sound panel close under it
+    const complete = completeShowing()
+    if (complete) {
+      options.open = false
+      soundPanel.open = false
+    }
+    // the phone's "Tap to push" hint is retired by the first push
+    if (pushEffort.active) phoneHint.done = true
+    const panelOpen = options.open || session.menuOpen || session.codeOpen || myLevels.panelOpen || soundPanel.open || welcome.open || complete
+    session.uiOpen = panelOpen // world.ts: E does not push under a panel
+
+    // --- phone touch controls ---
     const want = editor.open || session.inLobby
     // the top-down view has no avatar to move: no joystick, no jump
-    const hideJump = options.open || session.menuOpen || session.codeOpen || myLevels.panelOpen || soundPanel.open || topDownView.on
+    const hideJump = panelOpen || topDownView.on
     // E pushes the block the avatar stands against (world.ts); on a phone its button shows only then
     const canPush = pushPrompt.block >= 0 && !hideJump
     if (want === aiming && editor.open === erasing && hideJump === jumpHidden && topDownView.on === joystickHidden && canPush === pushShown) return
