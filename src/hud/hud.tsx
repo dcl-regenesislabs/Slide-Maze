@@ -11,6 +11,8 @@ import { Color4 } from '@dcl/sdk/math'
 import { Card, FS, INK, OutlineLabel, PAL, PillButton, S, btnState, hover, isHovered, popFactor, popPress, press } from './theme'
 import { BTN, Digits, FramedSprite, Img, NineBg, REV, Sparkles, TILE, sizeOf } from './sprites'
 import { UiTextureWarmer } from './textureWarmer'
+import { WelcomePanel, welcome } from './welcome'
+import { PushPrompt } from './pushPrompt'
 import { toggleTopDown, topDownView } from '../game/topDown'
 
 const hexBad = Color4.create(1, 0.54, 0.48, 1)
@@ -673,21 +675,32 @@ const ExitBanner = () => (
 
 export const Hud = () => {
   const showComplete = session.solved && Date.now() - session.completedAt > COMPLETE_DELAY_MS
+  // the welcome is for arriving at the scene: once a level (or the editor) opens it is done
+  if (welcome.open && (!session.inLobby || editor.open)) welcome.open = false
+  // the Level Complete panel stands alone, like the other full panels: no top bar, banners or Options under it
+  const completeOpen = showComplete && !session.advancing && !editor.open && !session.codeOpen && !session.menuOpen
+  if (completeOpen) {
+    options.open = false
+    soundPanel.open = false
+  }
   return (
     <UiEntity uiTransform={{ width: '100%', height: '100%', pointerFilter: 'none' }}>
       <UiTextureWarmer />
       {/* The level select covers the play HUD: the top bar and its banners hide while it is open. */}
-      {!session.inLobby && !session.menuOpen && <TopBar />}
+      {!session.inLobby && !session.menuOpen && !completeOpen && <TopBar />}
       {session.unlocked && session.hasDoor && !session.solved && !editor.open && !session.menuOpen && !topDownView.on && <ExitBanner />}
-      {Date.now() < session.toastUntil && !editor.open && !session.menuOpen && <ToastBanner />}
-      {!editor.open && <SideButtons />}
+      {Date.now() < session.toastUntil && !editor.open && !session.menuOpen && !completeOpen && <ToastBanner />}
+      {/* Options stays hidden until the welcome panel is closed, so the two never show at once */}
+      {!editor.open && !welcome.open && !completeOpen && <SideButtons />}
       {session.codeOpen && <CodePanel />}
       {soundPanel.open && <SoundPanel />}
       {session.menuOpen && <LevelMenu />}
-      {Date.now() < session.hintUntil && !session.inLobby && !session.menuOpen && <HintBanner />}
+      {Date.now() < session.hintUntil && !session.inLobby && !session.menuOpen && !completeOpen && <HintBanner />}
       {editor.open && <EditorUI />}
       {myLevels.panelOpen && <MyLevelsPanel />}
-      {showComplete && !session.advancing && !editor.open && !session.codeOpen && !session.menuOpen && <CompletePanel />}
+      {completeOpen && <CompletePanel />}
+      {!completeOpen && !session.menuOpen && !session.codeOpen && !soundPanel.open && <PushPrompt />}
+      {welcome.open && !session.menuOpen && !soundPanel.open && <WelcomePanel />}
     </UiEntity>
   )
 }

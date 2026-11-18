@@ -1,7 +1,7 @@
 // The 3D side of the game (greybox look): spawns a level from data, detects the avatar pushing a block,
 // animates the slide, and tells the session when the level is solved. All the rules live in logic.ts.
 
-import { Animator, AssetLoad, AvatarEmoteCommand, ColliderLayer, GltfContainerLoadingState, engine, ParticleSystem, PBParticleSystem_BlendMode, Entity, GltfContainer, InputAction, InputModifier, Material, MaterialTransparencyMode, MeshCollider, MeshRenderer, PointerEvents, PointerEventType, pointerEventsSystem, Transform, TriggerArea, triggerAreaEventsSystem } from '@dcl/sdk/ecs'
+import { Animator, AssetLoad, AvatarEmoteCommand, ColliderLayer, GltfContainerLoadingState, engine, ParticleSystem, PBParticleSystem_BlendMode, Entity, GltfContainer, InputAction, InputModifier, Material, MaterialTransparencyMode, MeshCollider, MeshRenderer, PointerEvents, PointerEventType, pointerEventsSystem, inputSystem, Transform, TriggerArea, triggerAreaEventsSystem } from '@dcl/sdk/ecs'
 import { Color3, Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { copyToClipboard, movePlayerTo, stopEmote, triggerSceneEmote } from '~system/RestrictedActions'
 import { FX_COLORS, clearFx, confetti, dust, holeBurst, plateOn, setupFx, stopBurst, trail, windStreak } from './fx'
@@ -30,9 +30,7 @@ const WALL_HEIGHT = 3.6 // the exit door annex's side walls
 const STEP_HEIGHT = 0.2 // a '#' tile is a ledge this far above the ice: low enough to jump onto easily
 const SLIDE_SPEED = 18 // m/s while a block slides
 const PUSH_REACH = 0.75 // how far past the block face the avatar may be and still count as touching it
-const PUSH_MIN_SPEED = 1.2 // m/s toward the block, sampled over the last PUSH_WINDOW, that counts as a deliberate push
-const PUSH_WINDOW = 0.3
-const PUSH_WINDUP = 0.35 // seconds the avatar must keep pressing against the face before the block starts to slide
+const PUSH_WINDUP = 0.35 // seconds from pressing E (against the face) to the block starting to slide, while the push emote plays
 const PUSH_COOLDOWN = 0.25 // pause after a slide ends before the next push can start
 const FALL_RESET_DELAY = 0.7
 const FILL_TIME = 0.45 // seconds for a block to drop into a fillable pit
@@ -121,9 +119,6 @@ let rt: Runtime | null = null
 /** Bumped every time a level is built (also on restart), so other modules can tell a fresh level from the one they knew. */
 export let levelGen = 0
 let active: { level: Level; index: number } = { level: LEVELS[0], index: 0 } // index -1 = a custom (editor) level
-let clock = 0
-const samples: { t: number; vx: number; vz: number }[] = []
-let prevPlayer: Vector3 | null = null
 
 /**
  * The effort of a push in progress, for the push animation / sound / dust: `active` is true from the moment the avatar
@@ -139,6 +134,12 @@ export const pushEffort: { active: boolean; progress: number; dir: Dir; blockInd
 }
 let dustT = 0
 let charge: { index: number; dir: Dir; t: number } | null = null
+
+/**
+ * The block the avatar is standing against and could push right now with E (block -1 = none), for the HUD prompt and the
+ * phone's action button. Never set in the top-down view, which has its own controls.
+ */
+export const pushPrompt: { block: number; dir: Dir } = { block: -1, dir: 'N' }
 
 // ---- Shoulder-push emote ----
 const PUSH_EMOTE = 'assets/Animations/ShoulderPushFast_emote.glb' // original retimed 1.6x; exact on-disk path, case included
@@ -181,7 +182,6 @@ function backOffFromBlock(i: number, dir: Dir) {
   if (gap >= PUSH_STANDOFF) return
   const back = PUSH_STANDOFF - gap
   const to = Vector3.create(p.x - wx * back, p.y, p.z - wz * back)
-  prevPlayer = null
   void movePlayerTo({ newRelativePosition: to, avatarTarget: Vector3.create(c.x, p.y, c.z), duration: 0.12 })
 }
 
@@ -563,7 +563,6 @@ function buildLevel(level: Level, index: number) {
   session.runNewBest = false
   session.codeOpen = false
   session.menuOpen = false
-  samples.length = 0
   charge = null
   pushEffort.active = false
   pushEffort.progress = 0
@@ -755,7 +754,6 @@ export function teleportToStart() {
   if (!rt) return
   const l = rt.level
   const pos = rt.spawn ?? tileCentre(l.start, l, FLOOR_TOP + 0.1)
-  prevPlayer = null
   return movePlayerTo({
     newRelativePosition: pos,
     cameraTarget: Vector3.create(ORIGIN.x, FLOOR_TOP + 1, ORIGIN.z)
@@ -1105,7 +1103,6 @@ export function returnToLobby() {
     session.codeOpen = false
     session.solved = false
     session.levelIndex = 0
-    prevPlayer = null
     return movePlayerTo({ newRelativePosition: LOBBY_SPAWN, cameraTarget: Vector3.create(LOBBY_SPAWN.x, 2, LOBBY_SPAWN.z + 10) })
   })
 }
@@ -1186,7 +1183,6 @@ function startPush(index: number, dir: Dir) {
     session.moves = res.state.moves
     if (!session.startedAt) session.startedAt = Date.now()
   }
-  samples.length = 0
 }
 
 /** Stop the landing deformation: the block goes back to its exact size and resting place. */
@@ -1445,21 +1441,16 @@ function doorSystem(dt: number) {
 }
 
 function pushSystem(dt: number) {
-  clock += dt
   trackPushEmote(dt)
   if (!Transform.has(engine.PlayerEntity)) return
   const p = Transform.get(engine.PlayerEntity).position
 
-  if (prevPlayer && dt > 0) {
-    samples.push({ t: clock, vx: (p.x - prevPlayer.x) / dt, vz: (p.z - prevPlayer.z) / dt })
-    while (samples.length && clock - samples[0].t > PUSH_WINDOW) samples.shift()
-  }
-  prevPlayer = Vector3.clone(p)
-
   pushEffort.lastEvent = ''
+  pushPrompt.block = -1
   if (!rt) return
   if (rt.cooldown > 0) rt.cooldown -= dt // also in the top-down view: its pushes wait for the same cooldown
   if (topDownView.on) return // pushes come from the top-down controls, the hidden avatar does nothing
+  if (editor.open) return // E belongs to the editor's tool switch there
   if (rt.slide || rt.cooldown > 0 || session.solved || session.unlocked || rt.resetIn > 0) {
     if (charge) endCharge('cancel')
     return
@@ -1486,25 +1477,32 @@ function pushSystem(dt: number) {
     return
   }
 
+  // Standing against a block face: E pushes it that way (the direction from the avatar to the block). Walking into it no
+  // longer pushes on its own. With two blocks in reach, the nearer one wins.
+  let near = -1
+  let nearDir: Dir = 'N'
+  let nearD = Infinity
   for (let i = 0; i < rt.blocks.length; i++) {
     const dir = contactDir(i, p)
     if (!dir) continue
-    const dd = DIR_DELTA[dir]
-    // grid y grows southward, world z grows northward
-    const wx = dd.x
-    const wz = -dd.y
-    let best = 0
-    for (const s of samples) best = Math.max(best, s.vx * wx + s.vz * wz)
-    if (best >= PUSH_MIN_SPEED) {
-      charge = { index: i, dir, t: 0 }
-      startPushEmote(i, dir)
-      pushEffort.active = true
-      pushEffort.progress = 0
-      pushEffort.dir = dir
-      pushEffort.blockIndex = i
-      return
+    const c = Transform.get(rt.blocks[i]).position
+    const d = Math.hypot(c.x - p.x, c.z - p.z)
+    if (d < nearD) {
+      near = i
+      nearDir = dir
+      nearD = d
     }
   }
+  if (near < 0) return
+  pushPrompt.block = near
+  pushPrompt.dir = nearDir
+  if (!inputSystem.isTriggered(InputAction.IA_PRIMARY, PointerEventType.PET_DOWN)) return
+  charge = { index: near, dir: nearDir, t: 0 }
+  startPushEmote(near, nearDir)
+  pushEffort.active = true
+  pushEffort.progress = 0
+  pushEffort.dir = nearDir
+  pushEffort.blockIndex = near
 }
 
 /** Which face of block `i` the avatar is touching (as the direction the push would go), or null. */
@@ -1620,6 +1618,5 @@ export function avatarTile(): Pt | null {
 /** Put the avatar on a tile (leaving the top-down view), looking at the level centre. */
 export function placeAvatarOn(t: Pt) {
   if (!rt) return
-  prevPlayer = null
   return movePlayerTo({ newRelativePosition: tileCentre(t, rt.level, FLOOR_TOP + 0.1), cameraTarget: Vector3.create(ORIGIN.x, FLOOR_TOP + 1, ORIGIN.z) })
 }

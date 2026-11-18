@@ -3,6 +3,7 @@ import { CameraModeArea, CameraType, engine, InputAction, SkyboxTime, Transform,
 import { ReactEcsRenderer } from '@dcl/sdk/react-ecs'
 import { Hud, options } from './hud'
 import { topDownView } from '../game/topDown'
+import { pushPrompt } from '../game/world'
 import { editor, session } from '../game/session'
 import { soundPanel } from '../game/sfx'
 import { myLevels } from '../game/levelStore'
@@ -31,7 +32,9 @@ export function setupHud() {
   let erasing: boolean | null = null
   let jumpHidden: boolean | null = null
   let joystickHidden: boolean | null = null
+  let pushShown: boolean | null = null
   const eraserIcon = { tex: { $case: 'texture' as const, texture: { src: 'assets/images/icon-eraser.png' } } }
+  const pushIcon = { tex: { $case: 'texture' as const, texture: { src: 'assets/images/revamp/tutorial/block_button.png' } } } // tight square crop, so the cube fills the button
   engine.addSystem(() => {
     // The Options menu lives in SideButtons, which unmounts in the editor; drop a stale open flag there so it cannot
     // keep Jump hidden after the editor is opened from the lobby terminal.
@@ -39,7 +42,10 @@ export function setupHud() {
     const want = editor.open || session.inLobby
     // the top-down view has no avatar to move: no joystick, no jump
     const hideJump = options.open || session.menuOpen || session.codeOpen || myLevels.panelOpen || soundPanel.open || topDownView.on
-    if (want === aiming && editor.open === erasing && hideJump === jumpHidden && topDownView.on === joystickHidden) return
+    // E pushes the block the avatar stands against (world.ts); on a phone its button shows only then
+    const canPush = pushPrompt.block >= 0 && !hideJump
+    if (want === aiming && editor.open === erasing && hideJump === jumpHidden && topDownView.on === joystickHidden && canPush === pushShown) return
+    pushShown = canPush
     joystickHidden = topDownView.on
     aiming = want
     erasing = editor.open
@@ -50,7 +56,7 @@ export function setupHud() {
         { inputAction: InputAction.IA_POINTER, hide: !want },
         { inputAction: InputAction.IA_SECONDARY, hide: !editor.open, icon: eraserIcon },
         { inputAction: InputAction.IA_JUMP, hide: hideJump },
-        { inputAction: InputAction.IA_PRIMARY, hide: true },
+        { inputAction: InputAction.IA_PRIMARY, hide: !canPush, icon: pushIcon },
         { inputAction: InputAction.IA_ACTION_3, hide: true },
         { inputAction: InputAction.IA_ACTION_4, hide: true },
         { inputAction: InputAction.IA_ACTION_5, hide: true },

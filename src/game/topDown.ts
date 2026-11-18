@@ -110,10 +110,11 @@ export function toScreen(p: Vector3): { left: number; top: number } | null {
 }
 
 /** How big one tile looks on screen, as a share of the screen height (for sizing the overlay). */
-export function tileScreenHeight(): number {
+export function tileScreenHeight(y?: number): number {
   if (!camera) return 0
   const { floorTop, blockSize, tile } = levelGeometry()
-  const depth = Transform.get(camera).position.y - (floorTop + blockSize / 2)
+  // measured at height y (default: the blocks' centre); nearer the camera, the same tile looks bigger
+  const depth = Transform.get(camera).position.y - (y ?? floorTop + blockSize / 2)
   const tanV = Math.tan(((FOV / 2) * Math.PI) / 180)
   return (tile / depth / tanV / 2) * 100
 }
