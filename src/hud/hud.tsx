@@ -238,14 +238,14 @@ const SideButtons = () => {
   const itemW = S(170)
   const itemH = Math.round((itemW * 63) / 280)
   const gap = S(9)
-  // No Close entry (tapping Options again closes it) and no Editor entry (on hold for now).
+  // No Close entry (tapping Options again closes it), no Editor entry and no Level code entry (the editor is on hold, and the
+  // codes only matter for its levels).
   const items: MenuEntry[] = [
     { id: 'menu', file: 'menu_labeled/menu_levels', label: 'Levels', onClick: act(toggleMenu) }
   ]
   if (!session.inLobby) items.push({ id: 'lobby', file: 'menu_labeled/menu_lobby', label: 'Lobby', onClick: act(returnToLobby) })
   if (!session.inLobby && !session.unlocked) items.push({ id: 'hint', file: 'menu_labeled/menu_hint', label: 'Hint', onClick: act(showHint) })
   if (!session.inLobby) items.push({ id: 'restart', file: 'menu_labeled/menu_restart', label: 'Restart', onClick: act(restartLevel) })
-  if (!session.inLobby) items.push({ id: 'code', file: 'menu_labeled/menu_level_code', label: 'Level code', onClick: act(toggleCode) })
   if (!session.inLobby) items.push({ id: 'topdown', file: topDownView.on ? 'menu_labeled/menu_3d_view' : 'menu_labeled/menu_top_down_view', label: topDownView.on ? '3D view' : 'Top-down view', onClick: act(toggleTopDown) })
   // the sound controls live in the menu (a round button beside Options overlapped the top bar on phones)
   items.push({ id: 'sound', file: sfx.muted ? 'menu_labeled/menu_sounds_off' : 'menu_labeled/menu_sounds_on', label: 'Sounds', onClick: act(() => (soundPanel.open = !soundPanel.open)) })
