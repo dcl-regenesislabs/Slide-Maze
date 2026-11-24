@@ -669,6 +669,16 @@ const Notice = (props: { id: string; text: string; icon?: string; rim: Color4; w
 
 const ToastBanner = () => <Notice id="toast" text={session.toastText} rim={PAL.good} width={S(560)} />
 
+/** Shown when the last push left the level impossible to finish: says so, with a restart right there. */
+const StuckPanel = () => (
+  <UiEntity uiTransform={{ positionType: 'absolute', position: { top: S(84), left: 0 }, width: '100%', height: S(128), justifyContent: 'center', alignItems: 'center', pointerFilter: 'none' }}>
+    <Card width={S(520)} height={S(124)} rim={PAL.bad} block>
+      <OutlineLabel value="This level can't be solved anymore" fontSize={FS(20)} color={PAL.text} width="100%" height={S(34)} />
+      <PillButton id="stuck-restart" accent label="Restart" width={S(170)} height={S(46)} margin={{ top: S(8) }} onClick={restartLevel} />
+    </Card>
+  </UiEntity>
+)
+
 /** Shown between covering the last plate and walking through the exit door. */
 const ExitBanner = () => (
   <Notice id="exit" text="Exit unlocked! Head for the door" icon="icons/icon_door.png" rim={PAL.good} width={S(400)} />
@@ -693,13 +703,14 @@ export const Hud = () => {
       {/* The level select covers the play HUD: the top bar and its banners hide while it is open. */}
       {!session.inLobby && !session.menuOpen && !completeOpen && <TopBar />}
       {session.unlocked && session.hasDoor && !session.solved && !editor.open && !session.menuOpen && !topDownView.on && <ExitBanner />}
-      {Date.now() < session.toastUntil && !editor.open && !session.menuOpen && !completeOpen && <ToastBanner />}
+      {session.stuck && !session.inLobby && !editor.open && !session.menuOpen && !completeOpen && <StuckPanel />}
+      {Date.now() < session.toastUntil && !session.stuck && !editor.open && !session.menuOpen && !completeOpen && <ToastBanner />}
       {/* Options stays hidden until the welcome panel is closed, so the two never show at once */}
       {!editor.open && !welcome.open && !completeOpen && <SideButtons />}
       {session.codeOpen && <CodePanel />}
       {soundPanel.open && <SoundPanel />}
       {session.menuOpen && <LevelMenu />}
-      {Date.now() < session.hintUntil && !session.inLobby && !session.menuOpen && !completeOpen && <HintBanner />}
+      {Date.now() < session.hintUntil && !session.stuck && !session.inLobby && !session.menuOpen && !completeOpen && <HintBanner />}
       {editor.open && <EditorUI />}
       {myLevels.panelOpen && <MyLevelsPanel />}
       {completeOpen && <CompletePanel />}

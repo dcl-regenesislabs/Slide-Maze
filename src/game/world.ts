@@ -552,6 +552,7 @@ function buildLevel(level: Level, index: number) {
 
   session.inLobby = false
   session.unlocked = false
+  session.stuck = false
   session.advancing = false
   advanceIn = 0
   session.hasDoor = level.exit !== null
@@ -1325,6 +1326,7 @@ function finishSlide(after: GameState, bounce: boolean) {
     rt.bounce = { index: s.index, t: 0, dx, dz, bx: s.to.x, bz: s.to.z }
   }
   refreshPlates(true)
+  if (!session.unlocked && !session.solved && !isSolved(rt.state)) checkStuck(s.pts[0])
   if (isSolved(rt.state) && !session.unlocked && !session.solved) {
     session.unlocked = true
     // the clock stops on the last block, not when the player reaches the exit door
@@ -1337,6 +1339,26 @@ function finishSlide(after: GameState, bounce: boolean) {
       completeLevel()
     }
   }
+}
+
+// Most levels search a few thousand states; past this the check gives up rather than stall a frame (no warning then)
+const STUCK_SEARCH_LIMIT = 200_000
+
+/**
+ * After a push: can the level still be finished? The player is wherever the pushed block was (the rules put them on its
+ * old tile, and in 3D they stand right behind it, in the same open area). If not, the HUD says so and offers a restart,
+ * since a block wedged where it cannot be pushed back, or a block used up in a pit, is otherwise easy to miss.
+ */
+function checkStuck(blockWasAt: Vector3) {
+  if (!rt) return
+  const l = rt.level
+  const at = {
+    x: Math.round((blockWasAt.x - ORIGIN.x) / TILE + (l.width - 1) / 2),
+    y: Math.round((l.height - 1) / 2 - (blockWasAt.z - ORIGIN.z) / TILE)
+  }
+  const sol = solveFrom(rt.state, at, STUCK_SEARCH_LIMIT)
+  session.stuck = !sol.solvable && !sol.truncated
+  if (session.stuck) clearHint()
 }
 
 /** Set by levelStore so the world can report a finished level to the server without importing it. */
@@ -1518,7 +1540,9 @@ function pushSystem(dt: number) {
   pushPrompt.block = near
   pushPrompt.dir = nearDir
   pushPrompt.busy = false
-  if (!inputSystem.isTriggered(InputAction.IA_PRIMARY, PointerEventType.PET_DOWN)) return
+  // E on desktop; on a phone the Jump button turns into the push button against a block (hud/index.ts)
+  const pressed = inputSystem.isTriggered(InputAction.IA_PRIMARY, PointerEventType.PET_DOWN) || (mobile() && inputSystem.isTriggered(InputAction.IA_JUMP, PointerEventType.PET_DOWN))
+  if (!pressed) return
   charge = { index: near, dir: nearDir, t: 0 }
   startPushEmote(near, nearDir)
   pushEffort.active = true
