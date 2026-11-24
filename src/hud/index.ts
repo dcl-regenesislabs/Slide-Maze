@@ -1,5 +1,5 @@
 import { TOP_DOWN_OVERLAY_Z, setupTopDownOverlay } from './topDownOverlay'
-import { CameraModeArea, CameraType, engine, InputAction, SkyboxTime, Transform, TouchScreenControls } from '@dcl/sdk/ecs'
+import { CameraModeArea, CameraType, engine, InputAction, InputModifier, SkyboxTime, Transform, TouchScreenControls } from '@dcl/sdk/ecs'
 import { ReactEcsRenderer } from '@dcl/sdk/react-ecs'
 import { Hud, completeShowing, options } from './hud'
 import { topDownView } from '../game/topDown'
@@ -11,6 +11,24 @@ import { openWelcome, welcome } from './welcome'
 import { phoneHint } from './pushPrompt'
 import { Vector3 } from '@dcl/sdk/math'
 import { mobile, resolvePlatform } from './platform'
+
+// Jump off while the Jump button pushes. The push emote and the top-down view set their own (freeze-all) modifier on the
+// player and lift it when done; this only adds its own when there is none, and only removes the one it added.
+let jumpLocked = false
+function lockJump(on: boolean) {
+  const p = engine.PlayerEntity
+  const mine = () => {
+    const m = InputModifier.getOrNull(p)?.mode
+    return m?.$case === 'standard' && !!m.standard.disableJump && !m.standard.disableAll
+  }
+  if (on) {
+    if (!InputModifier.has(p)) InputModifier.create(p, { mode: InputModifier.Mode.Standard({ disableJump: true }) })
+    jumpLocked = true
+  } else if (jumpLocked) {
+    if (mine()) InputModifier.deleteFrom(p)
+    jumpLocked = false
+  }
+}
 
 export function setupHud() {
   resolvePlatform()
@@ -73,8 +91,10 @@ export function setupHud() {
     const want = editor.open || session.inLobby
     // the top-down view has no avatar to move: no joystick, no jump
     const hideJump = panelOpen || topDownView.on
-    // E pushes the block the avatar stands against (world.ts); on a phone its button shows only then
+    // Against a block, the phone's Jump button becomes the push button (world.ts reads IA_JUMP as a push there): same
+    // place under the thumb, the cube icon, and the avatar does not jump while it is one
     const canPush = pushPrompt.block >= 0 && !hideJump
+    lockJump(mobile() && canPush)
     if (want === aiming && editor.open === erasing && hideJump === jumpHidden && topDownView.on === joystickHidden && canPush === pushShown) return
     pushShown = canPush
     joystickHidden = topDownView.on
@@ -86,8 +106,8 @@ export function setupHud() {
       touchInputs: [
         { inputAction: InputAction.IA_POINTER, hide: !want },
         { inputAction: InputAction.IA_SECONDARY, hide: !editor.open, icon: eraserIcon },
-        { inputAction: InputAction.IA_JUMP, hide: hideJump },
-        { inputAction: InputAction.IA_PRIMARY, hide: !canPush, icon: pushIcon },
+        { inputAction: InputAction.IA_JUMP, hide: hideJump, ...(canPush ? { icon: pushIcon } : {}) },
+        { inputAction: InputAction.IA_PRIMARY, hide: true },
         { inputAction: InputAction.IA_ACTION_3, hide: true },
         { inputAction: InputAction.IA_ACTION_4, hide: true },
         { inputAction: InputAction.IA_ACTION_5, hide: true },
