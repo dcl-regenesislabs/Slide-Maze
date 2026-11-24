@@ -27,6 +27,21 @@ export const solve = (level: Level, limit = 2_000_000): Solution => solveFrom(cr
 
 /** Solve from any position: `state` has the blocks (and filled pits) as they are now, `player` is where the avatar stands. */
 export function solveFrom(state0: GameState, player0: Pt, limit = 2_000_000): Solution {
+  const it = solveSteps(state0, player0, limit)
+  for (;;) {
+    const r = it.next()
+    if (r.done) return r.value
+  }
+}
+
+/** How many search nodes solveSteps expands between pauses. */
+const NODES_PER_YIELD = 8
+
+/**
+ * solveFrom as a resumable search: it pauses (yields) every few nodes and returns the Solution when done, so the game can
+ * spread a long search over several frames instead of stalling one (see the stuck check in world.ts).
+ */
+export function* solveSteps(state0: GameState, player0: Pt, limit = 2_000_000): Generator<void, Solution, void> {
   const level = state0.level
   const w = level.width
   const h = level.height
@@ -115,6 +130,7 @@ export function solveFrom(state0: GameState, player0: Pt, limit = 2_000_000): So
   let frontier: Node[] = [start]
   seen.add(keyOf(state0, flood(state0, player0, stampB, ++genB)))
   let searched = 0
+  let expanded = 0
 
   while (frontier.length) {
     const next: Node[] = []
@@ -145,6 +161,7 @@ export function solveFrom(state0: GameState, player0: Pt, limit = 2_000_000): So
         }
       }
       if (searched > limit) return { solvable: false, pushes: -1, steps: [], statesSearched: searched, truncated: true }
+      if (++expanded % NODES_PER_YIELD === 0) yield
     }
     frontier = next
   }

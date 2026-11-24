@@ -13,7 +13,7 @@ import { exitGlow, setGlow } from './doorGlow'
 import { ARROW_DIR, DIRS, DIR_DELTA, Dir, FAN_DIR, Level, Pt } from './grid'
 import { LEVELS, levelCode } from './levels'
 import { GameState, blockAt, createState, isPlateCovered, isSolved, playerCanStand, push, reachable } from './logic'
-import { solveFrom } from './solver'
+import { Solution, solveFrom, solveSteps } from './solver'
 import { levelPar, levelScore } from './score'
 import { SFX, playSfx, preloadSfx, startMusic, startWind, stopWind } from './sfx'
 import { editor, progress, session } from './session'
@@ -1184,6 +1184,8 @@ function startPush(index: number, dir: Dir) {
   dust(from.x, FLOOR_TOP + 0.1, from.z, 5)
   playSfx(SFX.slide)
   clearHint()
+  // start checking now, while the block slides, so the answer is usually in by the time it stops
+  if (!res.fell) startStuckCheck(res.state, rt.state.blocks[index])
   if (!res.fell) {
     session.moves = res.state.moves
     if (!session.startedAt) session.startedAt = Date.now()
@@ -1326,7 +1328,6 @@ function finishSlide(after: GameState, bounce: boolean) {
     rt.bounce = { index: s.index, t: 0, dx, dz, bx: s.to.x, bz: s.to.z }
   }
   refreshPlates(true)
-  if (!session.unlocked && !session.solved && !isSolved(rt.state)) checkStuck(s.pts[0])
   if (isSolved(rt.state) && !session.unlocked && !session.solved) {
     session.unlocked = true
     // the clock stops on the last block, not when the player reaches the exit door
@@ -1341,23 +1342,42 @@ function finishSlide(after: GameState, bounce: boolean) {
   }
 }
 
-// Most levels search a few thousand states; past this the check gives up rather than stall a frame (no warning then)
+// Most levels search a few thousand states; past this the check gives up (no warning then)
 const STUCK_SEARCH_LIMIT = 200_000
+const STUCK_BUDGET_MS = 4 // search time per frame: the check is spread over frames, never stalling one
 
 /**
- * After a push: can the level still be finished? The player is wherever the pushed block was (the rules put them on its
- * old tile, and in 3D they stand right behind it, in the same open area). If not, the HUD says so and offers a restart,
- * since a block wedged where it cannot be pushed back, or a block used up in a pit, is otherwise easy to miss.
+ * After a push: can the level still be finished? If not, the HUD says so and offers a restart, since a block wedged where
+ * it cannot be pushed back, or a block used up in a pit, is otherwise easy to miss.
+ *
+ * The search (up to a few hundred ms on the biggest levels) starts when the push does and runs a few ms per frame
+ * (stuckSystem). The answer is shown once the block has stopped, and only if the level is still in the state it was
+ * asked about (another push, a restart or a new level drops it).
  */
-function checkStuck(blockWasAt: Vector3) {
-  if (!rt) return
-  const l = rt.level
-  const at = {
-    x: Math.round((blockWasAt.x - ORIGIN.x) / TILE + (l.width - 1) / 2),
-    y: Math.round((l.height - 1) / 2 - (blockWasAt.z - ORIGIN.z) / TILE)
+let stuckJob: { it: Generator<void, Solution, void>; state: GameState; gen: number; result: Solution | null } | null = null
+
+/** `after` is the state the push leads to; the player then stands on `blockWasAt`, where the pushed block was. */
+function startStuckCheck(after: GameState, blockWasAt: Pt) {
+  session.stuck = false
+  stuckJob = isSolved(after) ? null : { it: solveSteps(after, blockWasAt, STUCK_SEARCH_LIMIT), state: after, gen: levelGen, result: null }
+}
+
+function stuckSystem() {
+  const job = stuckJob
+  if (!job) return
+  if (!rt || job.gen !== levelGen || session.unlocked || session.solved) {
+    stuckJob = null
+    return
   }
-  const sol = solveFrom(rt.state, at, STUCK_SEARCH_LIMIT)
-  session.stuck = !sol.solvable && !sol.truncated
+  const t0 = Date.now()
+  while (!job.result && Date.now() - t0 < STUCK_BUDGET_MS) {
+    const r = job.it.next()
+    if (r.done) job.result = r.value
+  }
+  if (!job.result || rt.slide) return // still searching, or the block is still on its way
+  stuckJob = null
+  if (rt.state !== job.state) return // something else happened since
+  session.stuck = !job.result.solvable && !job.result.truncated
   if (session.stuck) clearHint()
 }
 
@@ -1615,6 +1635,7 @@ export function setupWorld() {
   engine.addSystem(fanSystem, 6, 'sm-fan')
   engine.addSystem(doorSystem, 6, 'sm-door')
   engine.addSystem(hintSystem, 5, 'sm-hint')
+  engine.addSystem(stuckSystem, 5, 'sm-stuck')
   engine.addSystem(advanceSystem, 5, 'sm-advance')
 }
 
